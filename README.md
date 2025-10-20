@@ -1,4 +1,4 @@
-# 蛋白质功能分析集成管道
+# Context as the Key Engine
 
 这是一个用于蛋白质功能分析的集成管道，整合了BLAST、InterProScan、GO注释和LLM推理等多种工具，可以自动化完成从序列到功能预测的完整流程。
 
