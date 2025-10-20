@@ -1,0 +1,4 @@
+interproscan/*
+data/*
+
+*.pyc
