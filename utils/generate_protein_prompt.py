@@ -5,11 +5,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from jinja2 import Template
 try:
     from utils.protein_go_analysis import analyze_protein_go
-    from utils.prompts import ENZYME_PROMPT_SIMPLE, ENZYME_PROMPT, RELATION_SEMANTIC_PROMPT, FUNCTION_PROMPT
+    from utils.prompts import ENZYME_PROMPT, FUNCTION_PROMPT
     from utils.get_motif import get_motif_pfam
 except ImportError:
     from protein_go_analysis import analyze_protein_go
-    from prompts import ENZYME_PROMPT, RELATION_SEMANTIC_PROMPT, FUNCTION_PROMPT
+    from prompts import ENZYME_PROMPT, FUNCTION_PROMPT
     from get_motif import get_motif_pfam
 from tqdm import tqdm
 
@@ -142,7 +142,7 @@ def get_prompt_template(selected_info_types=None,lmdb_path=None):
     if selected_info_types is None:
         selected_info_types = ['motif', 'go']  # 默认包含motif和go信息
     if lmdb_path is None:
-        PROMPT_TEMPLATE = ENZYME_PROMPT_SIMPLE + "\n"
+        PROMPT_TEMPLATE = ENZYME_PROMPT + "\n"
     else:
         PROMPT_TEMPLATE = FUNCTION_PROMPT + "\n"
     PROMPT_TEMPLATE += """

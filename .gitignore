@@ -1,4 +1,5 @@
 interproscan/*
 data/*
+blast_db/*
 
 *.pyc

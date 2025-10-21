@@ -4,7 +4,6 @@ import sys
 import argparse
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
-import torch
 from tqdm import tqdm
 
 # 添加路径
