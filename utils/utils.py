@@ -5,13 +5,13 @@ from Bio.Blast import NCBIXML
 
 def get_protein_sequence_biopython(uniprot_id):
     """
-    使用BioPython通过UniProt ID获取蛋白质序列
+    Gets a protein sequence using its UniProt ID with BioPython.
     
-    参数:
-        uniprot_id (str): UniProt ID (如P12345)
+    Args:
+        uniprot_id (str): The UniProt ID (e.g., P12345).
     
-    返回:
-        str: 蛋白质序列或错误信息
+    Returns:
+        str: The protein sequence or an error message.
     """
     try:
         with ExPASy.get_sprot_raw(uniprot_id) as handle:
@@ -23,12 +23,12 @@ def get_protein_sequence_biopython(uniprot_id):
 
 def extract_interproscan_metrics(file_path, librarys="PFAM"):
     """
-    从InterProScan JSON结果中提取蛋白质信息和域信息。    
-    参数:
-        file_path (str): InterProScan JSON结果文件路径
-        librarys (list): 需要提取的域库列表，默认为["PFAM"]
-    返回:
-        dict: 包含蛋白质序列和对应域信息的字典      
+    Extracts protein information and domain information from InterProScan JSON results.    
+    Args:
+        file_path (str): Path to the InterProScan JSON result file.
+        librarys (list): A list of domain libraries to extract, defaults to ["PFAM"].
+    Returns:
+        dict: A dictionary containing protein sequences and their corresponding domain information.      
     """
     protein_info = {}
     with open(file_path, 'r', encoding='utf-8') as file:
@@ -50,7 +50,7 @@ def extract_interproscan_metrics(file_path, librarys="PFAM"):
                 else:
                     domain_info[match["signature"]["signatureLibraryRelease"]["library"]].append({match["signature"]["accession"]: None})
             
-            # 处理GO信息
+            # Process GO information
             if match["signature"]["entry"]:
                 if match["signature"]["entry"]["goXRefs"]:
                     for goXRef in match["signature"]["entry"]["goXRefs"]:
@@ -63,6 +63,9 @@ def extract_interproscan_metrics(file_path, librarys="PFAM"):
 
 
 def get_seqnid(file_path):
+    """
+    Parses a FASTA file and returns a dictionary of sequence IDs to sequences.
+    """
     seq_dict = {}
     current_header = None
     current_seq = []
@@ -86,13 +89,14 @@ def get_seqnid(file_path):
 
 def tofasta(fasta_path, uids, seqs):
     """
-    Write sequences in FASTA format to a file.
+    Writes sequences in FASTA format to a file.
     
     Parameters:
     - fasta_path: str, path to the output FASTA file
     - uids: list of str, sequence identifiers (headers)
     - seqs: list of str, corresponding sequences
     """
+
     if len(uids) != len(seqs):
         raise ValueError("Length of uids and seqs must be equal")
     
@@ -100,19 +104,19 @@ def tofasta(fasta_path, uids, seqs):
         for uid, seq in zip(uids, seqs):
             # Write header line starting with '>' followed by the uid
             f.write(f">{uid}\n")
-            # Write sequence (you may want to split long sequences into multiple lines)
+            # Write sequence
             f.write(f"{seq}\n")
 
 
 def extract_blast_metrics(xml_file):
     """
-    从BLAST XML结果中提取以下指标：
-    - ID (提取UniProt ID)
-    - Identity% (相似度百分比)
-    - Coverage (覆盖率)
+    Extracts the following metrics from a BLAST XML result file:
+    - ID (extracts the UniProt ID)
+    - Identity% (percentage of identical matches)
+    - Coverage (query coverage percentage)
     - E-value
     - Bit Score
-    - Positive% (相似残基百分比)
+    - Positive% (percentage of similar residues)
     """
     with open(xml_file) as f:
         blast_records = NCBIXML.parse(f)
@@ -124,15 +128,15 @@ def extract_blast_metrics(xml_file):
             
             for alignment in blast_record.alignments:
                 for hsp in alignment.hsps:
-                    # 提取UniProt ID (格式如 sp|A0A0H2ZM56|ADHE_STRP2)
+                    # Extract UniProt ID (e.g., from format sp|A0A0H2ZM56|ADHE_STRP2)
                     hit_id = alignment.hit_id.split("|")[1] if "|" in alignment.hit_id else alignment.hit_id
                     
-                    # 计算关键指标
+                    # Calculate key metrics
                     identity_percent = (hsp.identities / hsp.align_length) * 100
                     coverage = (hsp.align_length / query_length) * 100
                     positive_percent = (hsp.positives / hsp.align_length) * 100
                     
-                    # 存储结果
+                    # Store the results
                     _results.append({
                         "ID": hit_id,
                         "Identity%": round(identity_percent, 2),
@@ -146,6 +150,9 @@ def extract_blast_metrics(xml_file):
 
 
 def rename_interproscan_keys(interproscan_results):
+    """
+    Renames keys in the InterProScan results dictionary for consistency.
+    """
     new_results = {}
     for key, value in interproscan_results.items():
         if key == "PFAM":
@@ -156,4 +163,3 @@ def rename_interproscan_keys(interproscan_results):
             new_results[key.lower()] = value
         
     return new_results
-

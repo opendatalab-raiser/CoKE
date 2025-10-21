@@ -7,9 +7,13 @@ import re
 from utils.prompts import DEMO_SYSTEM_PROMPT
 
 def get_oai_completion(prompt, stream=False, files=None):
-    # 检查是否有文件上传
+    """
+    Gets a completion from an OpenAI-compatible API.
+    Handles both text and multimodal (image) inputs.
+    """
+    # Check if any files are uploaded
     if files and len(files) > 0:
-        # 使用Qwen-VL模型处理图像
+        # Use the Qwen-VL model for image processing
         api_pools = [
             ("your_api_key","base_url","model_name")
         ]
@@ -17,23 +21,23 @@ def get_oai_completion(prompt, stream=False, files=None):
         api_key, base_url, model = api
         client = OpenAI(api_key=api_key, base_url=base_url)
         
-        # 准备消息内容
+        # Prepare the message content
         messages = [
             {"role": "system", "content": [{"type": "text", "text": DEMO_SYSTEM_PROMPT}]}
         ]
         
         user_content = []
         
-        # 添加图像
+        # Add images
         for file in files:
             print(file)
-            if isinstance(file, str):  # 文件路径
+            if isinstance(file, str):  # It's a file path
                 with open(file, "rb") as f:
                     image_data = f.read()
-            else:  # 假设是文件对象
+            else:  # Assume it's a file-like object
                 image_data = file.read()
             
-            # 转换为base64
+            # Convert to base64
             base64_image = base64.b64encode(image_data).decode('utf-8')
             user_content.append({
                 "type": "image_url",
@@ -42,7 +46,7 @@ def get_oai_completion(prompt, stream=False, files=None):
                 }
             })
         
-        # 添加文本提示
+        # Add the text prompt
         user_content.append({"type": "text", "text": prompt})
         
         messages.append({
@@ -69,7 +73,7 @@ def get_oai_completion(prompt, stream=False, files=None):
             print(f"Qwen-VL API error: {e}")
             return None
     else:
-        # 原有文本处理逻辑
+        # Original logic for text processing
         api_pools = [
             ("your_api_key","base_url","model_name")
         ]
@@ -102,6 +106,9 @@ def get_oai_completion(prompt, stream=False, files=None):
             return None
 
 def call_chatgpt(ins, stream=False, files=None):
+    """
+    Calls the completion function with a retry mechanism.
+    """
     success = False
     re_try_count = 5
     ans = ''
@@ -111,10 +118,10 @@ def call_chatgpt(ins, stream=False, files=None):
             ans = get_oai_completion(ins, stream=stream, files=files)
             success = True
         except Exception as e:
-            print(f"Retry times: {re_try_count}; Error: {e}", flush=True)
+            print(f"Retry times left: {re_try_count}; Error: {e}", flush=True)
             time.sleep(5)
     return ans
 
 def call_chatgpt_stream(ins):
-    """流式调用ChatGPT"""
+    """Calls the chat model in streaming mode."""
     return call_chatgpt(ins, stream=True)

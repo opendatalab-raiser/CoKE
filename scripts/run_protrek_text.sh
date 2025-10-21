@@ -1,57 +1,57 @@
 #!/bin/bash
 
-# 脚本用法: bash run_protrek_text.sh <input_fasta> <output_dir> [topk] [max_iterations]
-# 参数:
-#   input_fasta: 输入的FASTA文件路径
-#   output_dir: 输出目录路径
-#   topk: (可选) ProTrek返回的top结果数量，默认为3
-#   max_iterations: (可选) 最大重试次数，默认为1000
+# Usage: bash run_protrek_text.sh <input_fasta> <output_dir> [topk] [max_iterations]
+# Arguments:
+#   input_fasta: Path to the input FASTA file
+#   output_dir: Path to the output directory
+#   topk: (Optional) Number of top results returned by ProTrek, default is 3
+#   max_iterations: (Optional) Maximum number of retry attempts, default is 1000
 
-# 检查参数
+# Check for arguments
 if [ $# -lt 2 ]; then
-    echo "用法: bash $0 <input_fasta> <output_dir> [topk] [max_iterations]"
-    echo "示例: bash $0 examples/input.fasta output/protrek_results 3 1000"
+    echo "Usage: bash $0 <input_fasta> <output_dir> [topk] [max_iterations]"
+    echo "Example: bash $0 examples/input.fasta output/protrek_results 3 1000"
     exit 1
 fi
 
-# 参数设置
+# Set parameters
 INPUT_FASTA="$1"
 OUTPUT_DIR="$2"
-TOPK="${3:-3}"  # 默认为3
-MAX_ITERATIONS="${4:-1000}"  # 默认为1000
+TOPK="${3:-3}"  # Default to 3
+MAX_ITERATIONS="${4:-1000}"  # Default to 1000
 ITERATION=1
 
-# 检查输入文件是否存在
+# Check if the input file exists
 if [ ! -f "$INPUT_FASTA" ]; then
-    echo "错误: 输入文件 $INPUT_FASTA 不存在"
+    echo "Error: Input file $INPUT_FASTA not found"
     exit 1
 fi
 
-echo "开始ProTrek文本获取任务"
-echo "输入文件: $INPUT_FASTA"
-echo "输出目录: $OUTPUT_DIR"
+echo "Starting ProTrek text retrieval task"
+echo "Input file: $INPUT_FASTA"
+echo "Output directory: $OUTPUT_DIR"
 echo "TopK: $TOPK"
-echo "最大迭代次数: $MAX_ITERATIONS"
+echo "Max iterations: $MAX_ITERATIONS"
 
 while [ $ITERATION -le $MAX_ITERATIONS ]; do
     echo "===================="
-    echo "第 $ITERATION/$MAX_ITERATIONS 次迭代"
+    echo "Iteration $ITERATION/$MAX_ITERATIONS"
     echo "===================="
     
-    # 运行Python脚本，直接从FASTA文件读取
+    # Run the Python script, reading directly from the FASTA file
     python utils/get_protrek_text.py \
         --input_fasta "$INPUT_FASTA" \
         --topk $TOPK \
         --output_dir "$OUTPUT_DIR"
     
-    # 检查退出码
+    # Check the exit code
     if [ $? -eq 0 ]; then
-        echo "✓ 所有任务完成成功!"
+        echo "✓ All tasks completed successfully!"
         break
     else
-        echo "✗ 本次迭代有失败，准备重试..."
+        echo "✗ Failures occurred in this iteration, preparing to retry..."
         if [ $ITERATION -lt $MAX_ITERATIONS ]; then
-            echo "等待5秒后开始下次迭代..."
+            echo "Waiting 5 seconds before starting the next iteration..."
             sleep 5
         fi
     fi
@@ -60,9 +60,9 @@ while [ $ITERATION -le $MAX_ITERATIONS ]; do
 done
 
 if [ $ITERATION -gt $MAX_ITERATIONS ]; then
-    echo "已达到最大迭代次数，仍有部分任务未完成"
+    echo "Maximum number of iterations reached, but some tasks remain unfinished."
     exit 1
 else
-    echo "所有任务已成功完成!"
+    echo "All tasks have been completed successfully!"
     exit 0
 fi

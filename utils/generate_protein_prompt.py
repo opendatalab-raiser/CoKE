@@ -14,15 +14,15 @@ except ImportError:
 from tqdm import tqdm
 
 class InterProDescriptionManager:
-    """管理InterPro描述信息的类，避免重复读取文件"""
+    """A class to manage InterPro description information to avoid repeatedly reading files."""
     
     def __init__(self, interpro_data_path, interproscan_info_path, protrek_text_dir):
         """
-        初始化时读取所有需要的数据
+        Initializes and reads all necessary data.
         
         Args:
-            interpro_data_path: interpro_data.json文件路径
-            interproscan_info_path: interproscan_info.json文件路径
+            interpro_data_path: Path to the interpro_data.json file.
+            interproscan_info_path: Path to the interproscan_info.json file.
         """
         self.interpro_data_path = interpro_data_path
         self.interproscan_info_path = interproscan_info_path
@@ -32,7 +32,7 @@ class InterProDescriptionManager:
         self._load_data()
     
     def _load_data(self):
-        """加载数据文件，只执行一次"""
+        """Loads data files, executed only once."""
         if self.interpro_data_path and os.path.exists(self.interpro_data_path):
             with open(self.interpro_data_path, 'r') as f:
                 self.interpro_data = json.load(f)
@@ -43,15 +43,15 @@ class InterProDescriptionManager:
     
     def get_description(self, protein_id, selected_types=None, protrek_topk=3):
         """
-        获取蛋白质的InterPro描述信息
+        Retrieves InterPro description information for a protein.
         
         Args:
-            protein_id: 蛋白质ID
-            selected_types: 需要获取的信息类型列表，如['superfamily', 'panther', 'gene3d', 'protrek']
-            protrek_topk: ProTrek返回的top结果数量
+            protein_id: The protein ID.
+            selected_types: A list of information types to retrieve, e.g., ['superfamily', 'panther', 'gene3d', 'protrek'].
+            protrek_topk: The number of top results to return from ProTrek.
         
         Returns:
-            dict: 包含各类型描述信息的字典
+            A dictionary containing description information for each type.
         """
         if selected_types is None:
             selected_types = []
@@ -61,7 +61,7 @@ class InterProDescriptionManager:
         
         result = {}
         
-        # 检查蛋白质是否存在（对于非protrek类型）
+        # Check if the protein exists (for non-protrek types)
         if self.interproscan_info and protein_id not in self.interproscan_info:
             if 'protrek' not in selected_types:
                 return result
@@ -71,10 +71,10 @@ class InterProDescriptionManager:
         
         interproscan_results = protein_info.get('interproscan_results', {}) if protein_info else {}
         
-        # 遍历选定的类型
+        # Iterate over the selected types
         for info_type in selected_types:
             if info_type == 'protrek':
-                # 处理protrek类型
+                # Handle protrek type
                 if protein_info and 'sequence' in protein_info:
                     try:
                         # from utils.get_protrek_text import get_protrek_text
@@ -89,7 +89,7 @@ class InterProDescriptionManager:
             elif info_type in interproscan_results:
                 type_descriptions = {}
                 
-                # 获取该类型的所有IPR ID
+                # Get all IPR IDs for this type
                 for entry in interproscan_results[info_type]:
                     for key, ipr_id in entry.items():
                         if ipr_id and ipr_id in self.interpro_data:
@@ -103,20 +103,20 @@ class InterProDescriptionManager:
         
         return result
 
-# 全局变量来缓存InterProDescriptionManager实例和lmdb连接
+# Global variables to cache the InterProDescriptionManager instance and lmdb connection
 _interpro_manager = None
 _lmdb_db = None
 _lmdb_path = None
 
 def get_interpro_manager(interpro_data_path, interproscan_info_path, protrek_text_dir):
-    """获取或创建InterProDescriptionManager实例"""
+    """Gets or creates an InterProDescriptionManager instance."""
     global _interpro_manager
     if _interpro_manager is None:
         _interpro_manager = InterProDescriptionManager(interpro_data_path, interproscan_info_path, protrek_text_dir)
     return _interpro_manager
 
 def get_lmdb_connection(lmdb_path):
-    """获取或创建lmdb连接"""
+    """Gets or creates an lmdb connection."""
     global _lmdb_db, _lmdb_path
     if _lmdb_db is None or _lmdb_path != lmdb_path:
         if _lmdb_db is not None:
@@ -134,13 +134,13 @@ def get_lmdb_connection(lmdb_path):
 
 def get_prompt_template(selected_info_types=None,lmdb_path=None):
     """
-    获取prompt模板，支持可选的信息类型
+    Gets the prompt template, supporting optional information types.
     
     Args:
-        selected_info_types: 需要包含的信息类型列表，如['motif', 'go', 'superfamily', 'panther', 'protrek']
+        selected_info_types: A list of information types to include, e.g., ['motif', 'go', 'superfamily', 'panther', 'protrek'].
     """
     if selected_info_types is None:
-        selected_info_types = ['motif', 'go']  # 默认包含motif和go信息
+        selected_info_types = ['motif', 'go']  # Default to include motif and go information
     if lmdb_path is None:
         PROMPT_TEMPLATE = ENZYME_PROMPT + "\n"
     else:
@@ -194,14 +194,14 @@ def get_prompt_template(selected_info_types=None,lmdb_path=None):
 
 def get_qa_data(protein_id, lmdb_path):
     """
-    从lmdb中获取指定蛋白质的所有QA对
+    Retrieves all QA pairs for a specific protein from lmdb.
     
     Args:
-        protein_id: 蛋白质ID
-        lmdb_path: lmdb数据库路径
+        protein_id: The protein ID.
+        lmdb_path: The path to the lmdb database.
     
     Returns:
-        list: QA对列表，每个元素包含question和ground_truth
+        A list of QA pairs, where each element contains a question and ground_truth.
     """
     if not lmdb_path or not os.path.exists(lmdb_path):
         return []
@@ -216,14 +216,14 @@ def get_qa_data(protein_id, lmdb_path):
             return []
         
         with db.begin() as txn:
-            # 遍历数字索引的数据，查找匹配的protein_id
+            # Iterate through data with numeric indices to find matching protein_id
             cursor = txn.cursor()
             for key, value in cursor:
                 try:
-                    # 尝试将key解码为数字（数字索引的数据）
+                    # Try to decode the key as a number (data with numeric indices)
                     key_str = key.decode('utf-8')
                     if key_str.isdigit():
-                        # 这是数字索引的数据，包含protein_id, question, ground_truth
+                        # This is numeric-indexed data, containing protein_id, question, ground_truth
                         data = json.loads(value.decode('utf-8'))
                         if isinstance(data, list) and len(data) == 3:
                             stored_protein_id, question, ground_truth = data[0], data[1], data[2]
@@ -241,7 +241,7 @@ def get_qa_data(protein_id, lmdb_path):
                                     'question_type': question_type
                                 })
                 except Exception as e:
-                    # 如果解析失败，跳过这个条目
+                    # Skip this entry if parsing fails
                     continue
     except Exception as e:
         print(f"Error reading lmdb for protein {protein_id}: {e}")
@@ -251,36 +251,36 @@ def get_qa_data(protein_id, lmdb_path):
 def generate_prompt(protein_id, protein2gopath, protrek_text_dir, protein2pfam_path, pfam_descriptions_path, go_info_path, 
                    interpro_data_path=None, interproscan_info_path=None, selected_info_types=None, lmdb_path=None, interpro_manager=None, question=None, protrek_topk=3):
     """
-    生成蛋白质prompt
+    Generates a protein prompt.
     
     Args:
-        selected_info_types: 需要包含的信息类型列表，如['motif', 'go', 'superfamily', 'panther', 'protrek']
-        interpro_data_path: interpro_data.json文件路径
-        interproscan_info_path: interproscan_info.json文件路径
-        interpro_manager: InterProDescriptionManager实例，如果提供则优先使用
-        question: 问题文本，用于QA任务
-        protrek_topk: ProTrek返回的top结果数量
+        selected_info_types: A list of information types to include, e.g., ['motif', 'go', 'superfamily', 'panther', 'protrek'].
+        interpro_data_path: Path to the interpro_data.json file.
+        interproscan_info_path: Path to the interproscan_info.json file.
+        interpro_manager: An InterProDescriptionManager instance, used if provided.
+        question: The question text for QA tasks.
+        protrek_topk: The number of top results to return from ProTrek.
     """
     if selected_info_types is None:
         selected_info_types = ['motif', 'go']
     
-    # 获取分析结果
+    # Get analysis results
     analysis = analyze_protein_go(protein_id, protein2gopath, go_info_path)
     motif_pfam = get_motif_pfam(protein_id, protein2pfam_path, pfam_descriptions_path)
     
-    # 获取InterPro和ProTrek描述信息
+    # Get InterPro and ProTrek description information
     interpro_descriptions = {}
     other_types = [t for t in selected_info_types if t not in ['motif', 'go']]
     if other_types:
         if interpro_manager:
-            # 使用提供的manager实例
+            # Use the provided manager instance
             interpro_descriptions = interpro_manager.get_description(protein_id, other_types, protrek_topk)
         elif interpro_data_path and interproscan_info_path:
-            # 使用全局缓存的manager
+            # Use the globally cached manager
             manager = get_interpro_manager(interpro_data_path, interproscan_info_path, protrek_text_dir)
             interpro_descriptions = manager.get_description(protein_id, other_types, protrek_topk)
 
-    # 准备模板数据
+    # Prepare template data
     template_data = {
         "protein_id": protein_id,
         "selected_info_types": selected_info_types,
@@ -300,7 +300,7 @@ def generate_prompt(protein_id, protein2gopath, protrek_text_dir, protein2pfam_p
 
 def save_prompts_parallel(protein_ids, output_path, protein2gopath, protrek_text_dir, protein2pfam_path, pfam_descriptions_path, go_info_path, 
                          interpro_data_path=None, interproscan_info_path=None, selected_info_types=None, lmdb_path=None, n_process=8, protrek_topk=3):
-    """并行生成和保存protein prompts"""
+    """Generates and saves protein prompts in parallel."""
     import json
     try:
         from utils.mpr import MultipleProcessRunnerSimplifier
@@ -310,34 +310,34 @@ def save_prompts_parallel(protein_ids, output_path, protein2gopath, protrek_text
     if selected_info_types is None:
         selected_info_types = ['motif', 'go']
     
-    # 在并行处理开始前创建InterProDescriptionManager实例
+    # Create an InterProDescriptionManager instance before starting parallel processing
     interpro_manager = None
     other_types = [t for t in selected_info_types if t not in ['motif', 'go']]
     if other_types and interpro_data_path and interproscan_info_path:
         interpro_manager = InterProDescriptionManager(interpro_data_path, interproscan_info_path, protrek_text_dir)
     
-    # 用于跟踪全局index的共享变量
+    # Shared variable for tracking the global index
     # if lmdb_path:
     #     import multiprocessing
-    #     global_index = multiprocessing.Value('i', 0)  # 共享整数，初始值为0
-    #     index_lock = multiprocessing.Lock()  # 用于同步访问
+    #     global_index = multiprocessing.Value('i', 0)  # Shared integer, initial value 0
+    #     index_lock = multiprocessing.Lock()  # Lock for synchronized access
     # else:
     #     global_index = None
     #     index_lock = None
     import multiprocessing
-    global_index = multiprocessing.Value('i', 0)  # 共享整数，初始值为0
-    index_lock = multiprocessing.Lock()  # 用于同步访问
+    global_index = multiprocessing.Value('i', 0)  # Shared integer, initial value 0
+    index_lock = multiprocessing.Lock()  # Lock for synchronized access
     results = {}
     
     def process_protein(process_id, idx, protein_id, writer):
         protein_id = protein_id.strip()
         
-        # 为每个进程初始化lmdb连接
+        # Initialize lmdb connection for each process
         if lmdb_path:
             get_lmdb_connection(lmdb_path)
         
         if lmdb_path:
-            # 如果有lmdb_path，处理QA数据
+            # If lmdb_path is provided, process QA data
             qa_pairs = get_qa_data(protein_id, lmdb_path)
             for qa_pair in qa_pairs:
                 question = qa_pair.get('question', None)
@@ -348,7 +348,7 @@ def save_prompts_parallel(protein_ids, output_path, protein2gopath, protrek_text
                 if prompt == "":
                     continue
                 if writer:
-                    # 获取并递增全局index
+                    # Get and increment the global index
                     with index_lock:
                         current_index = global_index.value
                         global_index.value += 1
@@ -371,7 +371,7 @@ def save_prompts_parallel(protein_ids, output_path, protein2gopath, protrek_text
                         }
                     writer.write(json.dumps(result) + '\n')
         else:
-            # 如果没有lmdb_path，按原来的方式处理
+            # If no lmdb_path, process as before
             prompt = generate_prompt(protein_id, protein2gopath, protrek_text_dir, protein2pfam_path, pfam_descriptions_path, go_info_path,
                                    interpro_data_path, interproscan_info_path, selected_info_types, lmdb_path, interpro_manager, protrek_topk=protrek_topk)
             if prompt == "":
@@ -388,7 +388,7 @@ def save_prompts_parallel(protein_ids, output_path, protein2gopath, protrek_text
                 }
                 writer.write(json.dumps(result) + '\n')
     
-    # 使用MultipleProcessRunnerSimplifier进行并行处理
+    # Use MultipleProcessRunnerSimplifier for parallel processing
     runner = MultipleProcessRunnerSimplifier(
         data=protein_ids,
         do=process_protein,
@@ -399,65 +399,65 @@ def save_prompts_parallel(protein_ids, output_path, protein2gopath, protrek_text
     
     runner.run()
     
-    # 清理全局lmdb连接
+    # Clean up the global lmdb connection
     global _lmdb_db
     if _lmdb_db is not None:
         _lmdb_db.close()
         _lmdb_db = None
     
     # if not lmdb_path:
-    #     # 如果没有lmdb_path，合并所有结果到一个字典（兼容旧格式）
+    #     # If no lmdb_path, merge all results into a single dictionary (for backward compatibility)
     #     final_results = {}
     #     with open(output_path + '.tmp', 'r') as f:
     #         for line in f:
-    #             if line.strip():  # 忽略空行
+    #             if line.strip():  # Ignore empty lines
     #                 final_results.update(json.loads(line))
         
-    #     # 保存最终结果为正确的JSON格式
+    #     # Save the final result in the correct JSON format
     #     with open(output_path, 'w') as f:
     #         json.dump(final_results, f, indent=2)
     # else:
-    #     # 如果有lmdb_path，直接保存为jsonl格式
+    #     # If lmdb_path is provided, save directly in jsonl format
     #     import shutil
     #     shutil.move(output_path + '.tmp', output_path)
     import shutil
     shutil.move(output_path + '.tmp', output_path)
     
-    # 删除临时文件（如果还存在的话）
+    # Remove the temporary file (if it still exists)
     if os.path.exists(output_path + '.tmp'):
         os.remove(output_path + '.tmp')
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='生成蛋白质功能分析的prompt')
+    parser = argparse.ArgumentParser(description='Generate prompts for protein function analysis')
     parser.add_argument('--protein_path', type=str, required=True, 
-                       help='蛋白质ID列表文件路径（每行一个ID）')
+                       help='Path to the protein ID list file (one ID per line)')
     parser.add_argument('--protein2pfam_path', type=str, required=True, 
-                       help='蛋白质-Pfam映射文件路径（InterProScan结果JSON文件）')
+                       help='Path to the protein-Pfam mapping file (InterProScan results JSON file)')
     parser.add_argument('--protrek_text_dir', type=str, default=None, 
-                       help='ProTrek文本描述目录路径（如果使用protrek信息类型）')
+                       help='Path to the ProTrek text description directory (if using protrek info type)')
     parser.add_argument('--pfam_descriptions_path', type=str, required=True, 
-                       help='Pfam描述文件路径（包含Pfam ID和描述的JSON文件）')
+                       help='Path to the Pfam descriptions file (JSON file with Pfam IDs and descriptions)')
     parser.add_argument('--protein2gopath', type=str, required=True, 
-                       help='蛋白质-GO映射文件路径（JSON Lines格式）')
+                       help='Path to the protein-GO mapping file (JSON Lines format)')
     parser.add_argument('--go_info_path', type=str, required=True, 
-                       help='GO本体文件路径（go.json）')
+                       help='Path to the GO ontology file (go.json)')
     parser.add_argument('--interpro_data_path', type=str, default=None, 
-                       help='InterPro数据文件路径（如果使用interpro相关信息类型）')
+                       help='Path to the InterPro data file (if using interpro-related info types)')
     parser.add_argument('--interproscan_info_path', type=str, default=None, 
-                       help='InterProScan结果文件路径（如果使用interpro相关信息类型）')
+                       help='Path to the InterProScan results file (if using interpro-related info types)')
     parser.add_argument('--lmdb_path', type=str, default=None, 
-                       help='LMDB数据库路径（如果生成QA格式的prompt）')
+                       help='Path to the LMDB database (if generating prompts in QA format)')
     parser.add_argument('--output_path', type=str, required=True, 
-                       help='输出文件路径（JSON或JSONL格式）')
+                       help='Output file path (JSON or JSONL format)')
     parser.add_argument('--selected_info_types', type=str, nargs='+', default=['motif', 'go'], 
-                       help='选择要包含的信息类型（默认：motif go）。可选：motif, go, protrek')
+                       help='Select the information types to include (default: motif go). Options: motif, go, protrek')
     parser.add_argument('--n_process', type=int, default=8, 
-                       help='并行处理的进程数（默认：8）')
+                       help='Number of parallel processes (default: 8)')
     parser.add_argument('--protrek_topk', type=int, default=3, 
-                       help='ProTrek返回的top结果数量（默认：3）')
+                       help='Number of top results to return from ProTrek (default: 3)')
     args = parser.parse_args()
-    #更新output_path，需要包含selected_info_types
+    # Update output_path to include selected_info_types
     args.output_path = args.output_path.replace('.json', '_' + '_'.join(args.selected_info_types) + '.json')
     print(args)
 
@@ -480,7 +480,7 @@ if __name__ == "__main__":
         protrek_topk=args.protrek_topk
     )
 
-    # 测试示例
+    # Test example
     # protein_id = 'A8CF74'
     # prompt = generate_prompt(protein_id, 'data/processed_data/go_integration_final_topk2.json', 
     #                         'data/processed_data/interproscan_info.json', 'data/raw_data/all_pfam_descriptions.json', 
@@ -488,5 +488,3 @@ if __name__ == "__main__":
     #                         'data/processed_data/interproscan_info.json', 
     #                         ['motif', 'go', 'superfamily', 'panther'])
     # print(prompt)
-
-        

@@ -565,7 +565,7 @@ def create_demo():
     with gr.Blocks(title="Protein Function Analysis Demo") as demo:
         gr.Markdown("# 🧬 Protein Function Analysis Demo")
         gr.Markdown("Enter a protein sequence for analysis, then ask multiple questions")
-        gr.Markdown(f"💡 **System Info**: Supports up to {MAX_CONCURRENT_ANALYSES} concurrent analyses. Each analysis uses 10 CPU cores and takes ~60-90 seconds.")
+        # gr.Markdown(f"💡 **System Info**: Supports up to {MAX_CONCURRENT_ANALYSES} concurrent analyses. Each analysis uses 10 CPU cores and takes ~60-90 seconds.")
 
         # 为每个session创建独立的analyzer实例
         analyzer_state = gr.State(None)
@@ -613,8 +613,8 @@ def create_demo():
                 
                 clear_btn = gr.Button("🔄 Clear Conversation", variant="secondary")
                 
-                export_btn = gr.Button("💾 Export Session Data", variant="secondary")
-                download_file = gr.File(label="Download", visible=False)
+                # export_btn = gr.Button("💾 Export Session Data", variant="secondary")
+                # download_file = gr.File(label="Download", visible=False)
             
             with gr.Column(scale=2):
                 gr.Markdown("### 💬 Conversation History")
@@ -721,11 +721,11 @@ def create_demo():
             outputs=[chatbot, analysis_status, analyzer_state, session_info]
         )
         
-        export_btn.click(
-            fn=export_session,
-            inputs=[analyzer_state],
-            outputs=[download_file]
-        )
+        # export_btn.click(
+        #     fn=export_session,
+        #     inputs=[analyzer_state],
+        #     outputs=[download_file]
+        # )
     
     return demo
 

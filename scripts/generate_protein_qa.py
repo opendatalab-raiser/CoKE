@@ -7,14 +7,14 @@ from tqdm import tqdm
 
 def get_protein_info(entry_dir: str, protein_id: str) -> Optional[Dict[str, str]]:
     """
-    从JSON文件中获取蛋白质的function/pathway/subcellular location信息
+    Get protein's function/pathway/subcellular location information from a JSON file.
     
     Args:
-        entry_dir: entry目录路径
-        protein_id: 蛋白质ID
+        entry_dir: The directory path for the entries.
+        protein_id: The protein ID.
         
     Returns:
-        Dict: 包含三种类型信息的字典，如果出错返回None
+        Dict: A dictionary containing the three types of information, or None if an error occurs.
     """
     try:
         file_path = os.path.join(entry_dir, f'{protein_id}.json')
@@ -29,23 +29,23 @@ def get_protein_info(entry_dir: str, protein_id: str) -> Optional[Dict[str, str]
         
         if 'comments' in data and len(data['comments']) > 0:
             for comment in data['comments']:
-                # 处理FUNCTION
+                # Process FUNCTION
                 if comment["commentType"] == "FUNCTION":
                     for text in comment["texts"]:
                         result['function'] += text["value"] + "\n"
                 
-                # 处理PATHWAY
+                # Process PATHWAY
                 elif comment["commentType"] == "PATHWAY":
                     for text in comment["texts"]:
                         result['pathway'] += text["value"] + "\n"
                 
-                # 处理SUBCELLULAR LOCATION
+                # Process SUBCELLULAR LOCATION
                 elif comment["commentType"] == "SUBCELLULAR LOCATION":
                     for location in comment.get("subcellularLocations", []):
                         if "location" in location:
                             result['subcellular_location'] += location["location"]["value"] + "\n"
         
-        # 去除多余的空格和换行
+        # Remove extra spaces and newlines
         for key in result:
             result[key] = result[key].strip()
             if not result[key]:
@@ -59,18 +59,18 @@ def get_protein_info(entry_dir: str, protein_id: str) -> Optional[Dict[str, str]
 
 def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dict]:
     """
-    根据蛋白质信息生成QA对
+    Generate QA pairs based on protein information.
     
     Args:
-        protein_id: 蛋白质ID
-        protein_info: 蛋白质信息字典
+        protein_id: The protein ID.
+        protein_info: A dictionary of protein information.
         
     Returns:
-        List: QA对列表
+        List: A list of QA pairs.
     """
     qa_pairs = []
     
-    # 添加function QA对
+    # Add function QA pair
     if protein_info['function']:
         qa_pairs.append({
             'protein_id': protein_id,
@@ -79,7 +79,7 @@ def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dic
             'question_type': 'function'
         })
     
-    # 添加pathway QA对
+    # Add pathway QA pair
     if protein_info['pathway']:
         qa_pairs.append({
             'protein_id': protein_id,
@@ -88,7 +88,7 @@ def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dic
             'question_type': 'pathway'
         })
     
-    # 添加subcellular location QA对
+    # Add subcellular location QA pair
     if protein_info['subcellular_location']:
         qa_pairs.append({
             'protein_id': protein_id,
@@ -101,13 +101,13 @@ def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dic
 
 def save_to_lmdb(qa_pairs: List[Dict], lmdb_path: str):
     """
-    将QA对保存到LMDB数据库
+    Save the QA pairs to an LMDB database.
     
     Args:
-        qa_pairs: QA对列表
-        lmdb_path: LMDB数据库路径
+        qa_pairs: A list of QA pairs.
+        lmdb_path: The path to the LMDB database.
     """
-    env = lmdb.open(lmdb_path, map_size=1099511627776)  # 1TB最大大小
+    env = lmdb.open(lmdb_path, map_size=1099511627776)  # 1TB maximum size
     with env.begin(write=True) as txn:
         for idx, qa in enumerate(qa_pairs):
             key = str(idx).encode('utf-8')
@@ -121,24 +121,24 @@ def save_to_lmdb(qa_pairs: List[Dict], lmdb_path: str):
 
 def save_to_json(qa_pairs: List[Dict], json_path: str):
     """
-    将QA对保存到JSON文件
+    Save the QA pairs to a JSON file.
     
     Args:
-        qa_pairs: QA对列表
-        json_path: JSON文件路径
+        qa_pairs: A list of QA pairs.
+        json_path: The path to the JSON file.
     """
     with open(json_path, 'w') as f:
         json.dump(qa_pairs, f, indent=2)
 
 def read_protein_ids_from_file(file_path: str) -> List[str]:
     """
-    从文本文件中读取蛋白质ID列表
+    Read a list of protein IDs from a text file.
     
     Args:
-        file_path: 蛋白质ID文件路径
+        file_path: The path to the protein ID file.
         
     Returns:
-        List: 蛋白质ID列表
+        List: A list of protein IDs.
     """
     with open(file_path, 'r') as f:
         protein_ids = [line.strip() for line in f if line.strip()]
@@ -146,13 +146,13 @@ def read_protein_ids_from_file(file_path: str) -> List[str]:
 
 def process_proteins(entry_dir: str, protein_ids: List[str], lmdb_path: str, json_path: str):
     """
-    处理指定的蛋白质ID列表，生成QA对并保存
+    Process the specified list of protein IDs, generate QA pairs, and save them.
     
     Args:
-        entry_dir: entry目录路径
-        protein_ids: 要处理的蛋白质ID列表
-        lmdb_path: LMDB数据库保存路径
-        json_path: JSON文件保存路径
+        entry_dir: The directory path for the entries.
+        protein_ids: The list of protein IDs to process.
+        lmdb_path: The save path for the LMDB database.
+        json_path: The save path for the JSON file.
     """
     all_qa_pairs = []
     processed_count = 0
@@ -166,24 +166,24 @@ def process_proteins(entry_dir: str, protein_ids: List[str], lmdb_path: str, jso
         all_qa_pairs.extend(qa_pairs)
         processed_count += 1
     
-    # 保存到LMDB
+    # Save to LMDB
     save_to_lmdb(all_qa_pairs, lmdb_path)
     
-    # 保存到JSON
+    # Save to JSON
     save_to_json(all_qa_pairs, json_path)
     
     print(f"Successfully processed {len(all_qa_pairs)} QA pairs from {processed_count}/{len(protein_ids)} proteins")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='从UniProt Entry文件生成蛋白质功能QA对')
+    parser = argparse.ArgumentParser(description='Generate protein function QA pairs from UniProt Entry files.')
     parser.add_argument('--entry_dir', type=str, required=True, 
-                       help='UniProt Entry目录路径（包含蛋白质JSON文件）')
+                       help='Directory path for UniProt Entries (containing protein JSON files).')
     parser.add_argument('--protein_id_files', type=str, default=None, 
-                       help='蛋白质ID列表文件路径（每行一个ID）。如果不指定，则处理entry_dir下所有JSON文件')
+                       help='File path for the list of protein IDs (one ID per line). If not specified, all JSON files in entry_dir will be processed.')
     parser.add_argument('--lmdb_path', type=str, required=True, 
-                       help='LMDB数据库输出路径')
+                       help='Output path for the LMDB database.')
     parser.add_argument('--json_path', type=str, required=True, 
-                       help='JSON文件输出路径')
+                       help='Output path for the JSON file.')
     args = parser.parse_args()
     save_dir = os.path.dirname(args.lmdb_path)
     print(save_dir)
@@ -191,10 +191,10 @@ if __name__ == "__main__":
         os.makedirs(save_dir, exist_ok=True)
     
     if args.protein_id_files:
-        # 如果指定了protein_id_files，只处理这些ID
+        # If protein_id_files is specified, process only these IDs
         protein_ids = read_protein_ids_from_file(args.protein_id_files)
     else:
-        # 否则处理entry目录下所有.json文件
+        # Otherwise, process all .json files in the entry directory
         protein_ids = [os.path.splitext(f)[0] for f in os.listdir(args.entry_dir) if f.endswith('.json')]
     
     process_proteins(args.entry_dir, protein_ids, args.lmdb_path, args.json_path)

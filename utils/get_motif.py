@@ -2,16 +2,19 @@ import json
 from collections import Counter
 import os
 
+# Global variables to cache loaded data, avoiding redundant file reads.
 _pfam_dict = None
 _pfam_descriptions = None
 
 def _load_pfam_data(protein2pfam_path):
+    """Loads the protein-to-Pfam mapping data from a JSON file."""
     global _pfam_dict
     if _pfam_dict is None:
         with open(protein2pfam_path, 'r') as file:
             _pfam_dict = json.load(file)
 
 def _load_pfam_descriptions(pfam_descriptions_path):
+    """Loads the Pfam descriptions from a JSON file."""
     global _pfam_descriptions
     if _pfam_descriptions is None:
         with open(pfam_descriptions_path, 'r') as file:
@@ -19,15 +22,16 @@ def _load_pfam_descriptions(pfam_descriptions_path):
 
 def get_motif_pfam(protein_id, protein2pfam_path, pfam_descriptions_path):
     """
-    获取指定蛋白质的pfam信息及其定义
+    Retrieves Pfam information and its definition for a given protein.
     
-    参数:
-    protein_id: str - 蛋白质ID
-    protein2pfam_path: str - interproscan_info.json文件路径
-    pfam_descriptions_path: str - pfam描述文件路径
+    Args:
+        protein_id (str): The protein ID.
+        protein2pfam_path (str): Path to the interproscan_info.json file.
+        pfam_descriptions_path (str): Path to the Pfam descriptions file.
     
-    返回:
-    dict - pfam_id到定义的映射字典，例如{"PF04820": "definition content"}
+    Returns:
+        dict: A dictionary mapping Pfam IDs to their definitions, 
+              e.g., {"PF04820": "definition content"}.
     """
     _load_pfam_data(protein2pfam_path)
     _load_pfam_descriptions(pfam_descriptions_path)
@@ -39,7 +43,7 @@ def get_motif_pfam(protein_id, protein2pfam_path, pfam_descriptions_path):
     _pfam_dicts = protein_info.get('interproscan_results', {}).get('pfam_id', [])
     pfam_ids = []
     for pfam_dict in _pfam_dicts:
-        for key,value in pfam_dict.items():
+        for key, value in pfam_dict.items():
             pfam_ids.append(key)
     
     result = {}
@@ -51,10 +55,10 @@ def get_motif_pfam(protein_id, protein2pfam_path, pfam_descriptions_path):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description='获取蛋白质的Pfam motif信息')
-    parser.add_argument("--protein_id", type=str, required=True, help='蛋白质ID，例如：A8CF74')
-    parser.add_argument("--protein2pfam_path", type=str, required=True, help='蛋白质-Pfam映射文件路径（InterProScan结果JSON文件）')
-    parser.add_argument("--pfam_descriptions_path", type=str, required=True, help='Pfam描述文件路径（包含Pfam ID和描述的JSON文件）')
+    parser = argparse.ArgumentParser(description='Get Pfam motif information for a protein.')
+    parser.add_argument("--protein_id", type=str, required=True, help='The protein ID, e.g., A8CF74')
+    parser.add_argument("--protein2pfam_path", type=str, required=True, help='Path to the protein-Pfam mapping file (InterProScan results JSON file)')
+    parser.add_argument("--pfam_descriptions_path", type=str, required=True, help='Path to the Pfam descriptions file (JSON file containing Pfam IDs and descriptions)')
     args = parser.parse_args()
     result = get_motif_pfam(args.protein_id, args.protein2pfam_path, args.pfam_descriptions_path)
-    print(result)
+    print(json.dumps(result, indent=2))
