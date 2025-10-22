@@ -1,27 +1,27 @@
 #!/bin/bash
 
-# 示例脚本：运行蛋白质功能分析管道
-# 使用examples目录中的示例数据
+# Example script: Run the protein function analysis pipeline
+# Uses example data from the 'examples' directory
 
-# 设置工作目录为项目根目录
+# Set the working directory to the project root
 cd "$(dirname "$0")/.."
 
 echo "=========================================="
-echo "蛋白质功能分析管道 - 示例运行"
+echo "Protein Function Analysis Pipeline - Example Run"
 echo "=========================================="
 
-# 示例1: 基本用法 - 非酶功能预测
+# Example 1: Basic Usage - Non-enzyme Function Prediction
 echo ""
-echo "示例1: 基本用法 - 非酶功能预测"
+echo "Example 1: Basic Usage - Non-enzyme Function Prediction"
 echo "------------------------------------------"
 python integrated_pipeline.py \
     --input_fasta examples/input.fasta \
     --output_dir output/example_basic \
     --selected_info_types motif go
 
-# 示例2: 酶功能预测（EC号预测）
+# Example 2: Enzyme Function Prediction (EC Number Prediction)
 echo ""
-echo "示例2: 酶功能预测（EC号预测）"
+echo "Example 2: Enzyme Function Prediction (EC Number Prediction)"
 echo "------------------------------------------"
 python integrated_pipeline.py \
     --input_fasta examples/input.fasta \
@@ -29,9 +29,9 @@ python integrated_pipeline.py \
     --selected_info_types motif go \
     --is_enzyme
 
-# 示例3: 包含ProTrek信息
+# Example 3: Including ProTrek Information
 echo ""
-echo "示例3: 包含ProTrek信息"
+echo "Example 3: Including ProTrek Information"
 echo "------------------------------------------"
 python integrated_pipeline.py \
     --input_fasta examples/input.fasta \
@@ -41,16 +41,15 @@ python integrated_pipeline.py \
 
 echo ""
 echo "=========================================="
-echo "所有示例运行完成！"
+echo "All example runs completed!"
 echo "=========================================="
 echo ""
-echo "输出结果位于:"
+echo "Output results are located in:"
 echo "- output/example_basic/llm_answers/"
 echo "- output/example_enzyme/llm_answers/"
 echo "- output/example_protrek/llm_answers/"
 echo ""
-echo "中间结果位于:"
+echo "Intermediate results are located in:"
 echo "- output/example_basic/tool_results/"
 echo "- output/example_enzyme/tool_results/"
 echo "- output/example_protrek/tool_results/"
-
