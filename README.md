@@ -2,6 +2,8 @@
 
 This is an integrated pipeline for protein function analysis that combines multiple tools—BLAST, InterProScan, GO annotation, and LLM-based reasoning—to automate the end‑to‑end workflow from sequence to function prediction.
 
+![intro](./assets/intro.png)
+
 ## Features
 
 * **Multi‑tool integration:** Integrates BLAST, InterProScan, ProTrek, and other bioinformatics tools.
