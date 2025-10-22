@@ -1,5 +1,9 @@
 interproscan/*
 data/*
 blast_db/*
+nginx_config/*
+user_data/*
+.gradio/*
+temp/*
 
 *.pyc
