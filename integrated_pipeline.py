@@ -39,6 +39,9 @@ class IntegratedProteinPipeline:
                  n_process_llm: int = 64,  # Number of parallel processes for LLM answer generation
                  is_enzyme: bool = False,  # Whether the protein is an enzyme
                  skip_protrek_check: bool = False,  # Whether to skip the ProTrek check
+                 use_foldseek: bool = True,  # Whether to use Foldseek
+                 foldseek_database: str = "foldseek_db/sp",  # Foldseek database path
+                 foldseek_num_threads: int = 64,  # Number of Foldseek threads
                  args: argparse.Namespace = None):
         """
         Integrated protein analysis pipeline.
@@ -59,6 +62,9 @@ class IntegratedProteinPipeline:
             n_process_llm: Number of parallel processes for LLM answer generation.
             is_enzyme: Whether the protein is an enzyme.
             skip_protrek_check: Whether to skip checking for ProTrek results.
+            use_foldseek: Whether to use Foldseek for remote homology search.
+            foldseek_database: Path to the Foldseek database.
+            foldseek_num_threads: Number of threads for Foldseek.
         """
         self.blast_database = blast_database
         self.expect_value = expect_value
@@ -75,6 +81,9 @@ class IntegratedProteinPipeline:
         self.n_process_llm = n_process_llm
         self.is_enzyme = is_enzyme
         self.skip_protrek_check = skip_protrek_check
+        self.use_foldseek = use_foldseek
+        self.foldseek_database = foldseek_database
+        self.foldseek_num_threads = foldseek_num_threads
 
         # File path configuration
         self.pfam_descriptions_path = pfam_descriptions_path
@@ -86,7 +95,11 @@ class IntegratedProteinPipeline:
         self.protrek_dir = args.protrek_dir if args else None
 
         # Initialize the GO integration pipeline
-        self.go_pipeline = GOIntegrationPipeline(topk=self.go_topk)
+        self.go_pipeline = GOIntegrationPipeline(
+            topk=self.go_topk,
+            use_foldseek=self.use_foldseek,
+            foldseek_database=self.foldseek_database
+        )
 
         # Initialize the InterPro manager (if needed)
         self.interpro_manager = None
@@ -126,7 +139,7 @@ class IntegratedProteinPipeline:
         {%- if 'go' in selected_info_types and go_data.status == 'success' %}
 
         GO:{% for go_entry in go_data.go_annotations %}
-        ▢ GO term{{loop.index}}: {{go_entry.go_id}}
+        ▢ GO term{{loop.index}}: {{go_entry.go_id}} (来源: {{go_entry.source}}, E-value: {{go_entry.evalue}})
         • definition: {{ go_data.all_related_definitions.get(go_entry.go_id, 'not found definition') }}
         {% endfor %}
         {%- endif %}
@@ -215,16 +228,16 @@ class IntegratedProteinPipeline:
 
     def step1_run_blast_and_interproscan(self, input_fasta: str, temp_dir: str = "temp") -> tuple:
         """
-        Step 1: Run BLAST and InterProScan analysis.
+        Step 1: Run BLAST, InterProScan, and optionally Foldseek analysis.
 
         Args:
             input_fasta: Path to the input FASTA file.
             temp_dir: Directory for temporary files.
 
         Returns:
-            A tuple: (interproscan_info, blast_info).
+            A tuple: (interproscan_info, blast_info, foldseek_info).
         """
-        print("Step 1: Running BLAST and InterProScan analysis...")
+        print("Step 1: Running BLAST, InterProScan, and Foldseek analysis...")
 
         # Create temporary directory
         os.makedirs(temp_dir, exist_ok=True)
@@ -251,6 +264,27 @@ class IntegratedProteinPipeline:
         blast_info = {}
         for uid, info in blast_results.items():
             blast_info[uid] = {"sequence": seq_dict[uid], "blast_results": info}
+
+        # Run Foldseek if enabled
+        foldseek_info = {}
+        if self.use_foldseek:
+            print("Running Foldseek analysis...")
+            try:
+                from tools.foldseek import run_foldseek_analysis
+                foldseek_output = os.path.join(temp_dir, "foldseek_results.m8")
+                foldseek_info = run_foldseek_analysis(
+                    fasta_file=input_fasta,
+                    database=self.foldseek_database,
+                    evalue=self.expect_value,
+                    num_threads=self.foldseek_num_threads,
+                    output_file=foldseek_output,
+                    temp_dir=os.path.join(temp_dir, "foldseek_tmp")
+                )
+                print(f"Foldseek analysis complete: Found results for {len(foldseek_info)} proteins.")
+            except Exception as e:
+                print(f"Warning: Foldseek analysis failed: {str(e)}")
+                print("Continuing without Foldseek results...")
+                foldseek_info = {}
 
         # Run InterProScan
         print("Running InterProScan analysis...")
@@ -280,15 +314,17 @@ class IntegratedProteinPipeline:
         # Cleanup is handled in the finally block of the run() method.
 
         print(f"Step 1 complete: Processed {len(interproscan_info)} proteins.")
-        return interproscan_info, blast_info
+        return interproscan_info, blast_info, foldseek_info
 
-    def step2_integrate_go_information(self, interproscan_info: Dict, blast_info: Dict) -> Dict:
+    def step2_integrate_go_information(self, interproscan_info: Dict, blast_info: Dict, 
+                                      foldseek_info: Dict = None) -> Dict:
         """
         Step 2: Integrate GO information.
 
         Args:
             interproscan_info: InterProScan results.
             blast_info: BLAST results.
+            foldseek_info: Foldseek results (optional).
 
         Returns:
             A dictionary of integrated GO information.
@@ -296,7 +332,7 @@ class IntegratedProteinPipeline:
         print("Step 2: Integrating GO information...")
 
         # Use the GO integration pipeline for first-level filtering
-        protein_go_dict = self.go_pipeline.first_level_filtering(interproscan_info, blast_info)
+        protein_go_dict = self.go_pipeline.first_level_filtering(interproscan_info, blast_info, foldseek_info)
 
         print(f"Step 2 complete: Integrated GO information for {len(protein_go_dict)} proteins.")
         return protein_go_dict
@@ -521,8 +557,11 @@ class IntegratedProteinPipeline:
             from utils.protein_go_analysis import get_go_definition
             from jinja2 import Template
 
-            # Get GO analysis results
-            go_ids = protein_go_dict.get(protein_id, [])
+            # Get GO analysis results (new format with sources)
+            go_data_raw = protein_go_dict.get(protein_id, {})
+            go_ids = go_data_raw.get("go_ids", []) if isinstance(go_data_raw, dict) else go_data_raw
+            go_sources = go_data_raw.get("go_sources", {}) if isinstance(go_data_raw, dict) else {}
+            
             go_annotations = []
             all_related_definitions = {}
 
@@ -530,7 +569,17 @@ class IntegratedProteinPipeline:
                 for go_id in go_ids:
                     # Ensure correct GO ID format
                     clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
-                    go_annotations.append({"go_id": clean_go_id})
+                    
+                    # Get source and e-value information
+                    source_info = go_sources.get(clean_go_id, {})
+                    source = source_info.get("source", "Unknown")
+                    evalue = source_info.get("evalue", None)
+                    
+                    go_annotations.append({
+                        "go_id": clean_go_id,
+                        "source": source,
+                        "evalue": evalue if evalue else "N/A"
+                    })
 
                     # Get GO definition
                     if self.go_info_path and os.path.exists(self.go_info_path):
@@ -879,26 +928,31 @@ class IntegratedProteinPipeline:
             print(f"Skipping ProTrek check (using existing results): {self.protrek_dir}")
 
         try:
-            # Step 1: Run BLAST and InterProScan
+            # Step 1: Run BLAST, InterProScan, and Foldseek
             if self.interproscan_info_path is None or self.blast_info_path is None:
-                interproscan_info, blast_info = self.step1_run_blast_and_interproscan(
+                interproscan_info, blast_info, foldseek_info = self.step1_run_blast_and_interproscan(
                     input_fasta, temp_dir
                 )
                 # Save intermediate results to the tool_results directory
                 interproscan_save_path = os.path.join(tool_results_dir, "interproscan_info.json")
                 blast_save_path = os.path.join(tool_results_dir, "blast_info.json")
+                foldseek_save_path = os.path.join(tool_results_dir, "foldseek_info.json")
                 with open(interproscan_save_path, 'w') as f:
                     json.dump(interproscan_info, f, indent=2, ensure_ascii=False)
                 with open(blast_save_path, 'w') as f:
                     json.dump(blast_info, f, indent=2, ensure_ascii=False)
+                if foldseek_info:
+                    with open(foldseek_save_path, 'w') as f:
+                        json.dump(foldseek_info, f, indent=2, ensure_ascii=False)
                 print(f"Intermediate results saved to: {tool_results_dir}")
             else:
                 interproscan_info = json.load(open(self.interproscan_info_path))
                 blast_info = json.load(open(self.blast_info_path))
+                foldseek_info = {}
 
             # Step 2: Integrate GO information
             protein_go_dict = self.step2_integrate_go_information(
-                interproscan_info, blast_info
+                interproscan_info, blast_info, foldseek_info
             )
 
             # Step 3: Generate prompts in parallel
@@ -949,6 +1003,14 @@ def main():
                        default="interproscan/interproscan-5.75-106.0/interproscan.sh",
                        help="Path to the InterProScan executable.")
 
+    # Foldseek parameters
+    parser.add_argument("--use_foldseek", action="store_true", default=True,
+                       help="Whether to use Foldseek for remote homology search (default: True).")
+    parser.add_argument("--foldseek_database", type=str, default="foldseek_db/sp",
+                       help="Path to the Foldseek database (default: foldseek_db/sp).")
+    parser.add_argument("--foldseek_num_threads", type=int, default=64,
+                       help="Number of threads for Foldseek (default: 64).")
+
     # GO integration parameters
     parser.add_argument("--go_topk", type=int, default=2, help="Top-k parameter for GO integration.")
 
@@ -981,6 +1043,9 @@ def main():
         n_process_llm=args.n_process_llm,
         is_enzyme=args.is_enzyme,
         skip_protrek_check=args.skip_protrek_check,
+        use_foldseek=args.use_foldseek,
+        foldseek_database=args.foldseek_database,
+        foldseek_num_threads=args.foldseek_num_threads,
         args=args
     )
 

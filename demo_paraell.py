@@ -90,7 +90,7 @@ def get_prompt_template(selected_info_types=None, is_enzyme=False):
     {%- if 'go' in selected_info_types and go_data.status == 'success' %}
 
     GO:{% for go_entry in go_data.go_annotations %}
-    ▢ GO term{{loop.index}}: {{go_entry.go_id}}
+    ▢ GO term{{loop.index}}: {{go_entry.go_id}}{% if go_entry.source %} (来源: {{go_entry.source}}, E-value: {{go_entry.evalue}}){% endif %}
     • definition: {{ go_data.all_related_definitions.get(go_entry.go_id, 'not found definition') }}
     {% endfor %}
     {%- endif %}

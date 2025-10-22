@@ -183,3 +183,84 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \
     tqdm \
     gradio \
     lmdb
+
+# Install and configure Foldseek
+echo "Installing Foldseek from bioconda..."
+conda install -c conda-forge -c bioconda foldseek -y
+
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to install Foldseek"
+    exit 1
+fi
+
+echo "Foldseek installation completed."
+
+# Create Foldseek database directory
+mkdir -p foldseek_db
+cd foldseek_db || exit 1
+
+echo "Downloading AlphaFold Swiss-Prot database for Foldseek..."
+echo "This may take a while depending on your network connection..."
+foldseek databases Alphafold/Swiss-Prot sp tmp
+
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to download Foldseek database!"
+    echo "You can try downloading manually later by running:"
+    echo "foldseek databases Alphafold/Swiss-Prot foldseek_db/sp tmp"
+    cd ..
+else
+    echo "Foldseek database downloaded successfully."
+    cd ..
+    
+    # Get the absolute path for the Foldseek database
+    FOLDSEEK_DB_PATH=$(pwd)/foldseek_db/sp
+    export FOLDSEEK_DB=$FOLDSEEK_DB_PATH
+    echo "FOLDSEEK_DB environment variable set for current session: $FOLDSEEK_DB"
+    
+    # Function to add FOLDSEEK_DB to shell config file
+    setup_foldseek_env() {
+        local shell_config_file=$1
+        if [ -f "$shell_config_file" ]; then
+            if grep -q "export FOLDSEEK_DB=" "$shell_config_file"; then
+                echo "FOLDSEEK_DB variable is already set in $shell_config_file."
+            else
+                echo "Adding FOLDSEEK_DB to $shell_config_file..."
+                echo "" >> "$shell_config_file"
+                echo "# Set FOLDSEEK_DB for Foldseek searches" >> "$shell_config_file"
+                echo "export FOLDSEEK_DB=\"$FOLDSEEK_DB_PATH\"" >> "$shell_config_file"
+                echo "Successfully added FOLDSEEK_DB to $shell_config_file."
+                echo "Please run 'source $shell_config_file' or restart your terminal to apply changes."
+            fi
+        else
+            echo "Could not find $shell_config_file. Please add the following line to your shell's startup file:"
+            echo "export FOLDSEEK_DB=\"$FOLDSEEK_DB_PATH\""
+        fi
+    }
+    
+    # Detect shell and update config file
+    if [ -n "$BASH_VERSION" ]; then
+        setup_foldseek_env "$HOME/.bashrc"
+    elif [ -n "$ZSH_VERSION" ]; then
+        setup_foldseek_env "$HOME/.zshrc"
+    else
+        echo "Could not automatically detect your shell's config file."
+        echo "Please add the following line to your shell's startup file (e.g., .bash_profile, .profile):"
+        echo "export FOLDSEEK_DB=\"$FOLDSEEK_DB_PATH\""
+    fi
+fi
+
+echo ""
+echo "===================================="
+echo "Setup Complete!"
+echo "===================================="
+echo "Summary:"
+echo "- InterProScan installed in conda environment '${CONDA_ENV_NAME}'"
+echo "- BLAST database: $(pwd)/blast_db"
+echo "- Foldseek database: $(pwd)/foldseek_db/sp"
+echo ""
+echo "To activate the environment:"
+echo "conda activate ${CONDA_ENV_NAME}"
+echo ""
+echo "Environment variables set:"
+echo "export BLASTDB=\"$(pwd)/blast_db\""
+echo "export FOLDSEEK_DB=\"$(pwd)/foldseek_db/sp\""
