@@ -739,6 +739,7 @@ if __name__ == "__main__":
         server_port=30003,
         share=False,
         debug=True,
-        max_threads=50  # 限制最大线程数
+        max_threads=50,  # 限制最大线程数
+        root_path="/CoKE"  # 使Gradio正确处理子路径
     )
 
