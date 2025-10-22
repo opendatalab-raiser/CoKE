@@ -34,59 +34,59 @@ echo "Activating conda environment..."
 source $(conda info --base)/etc/profile.d/conda.sh
 conda activate ${CONDA_ENV_NAME}
 
-# # Install Java 11 if not present in the existing environment
-# if ! java -version 2>&1 | grep -q "openjdk.*11"; then
-#     echo "Installing OpenJDK 11 in existing environment..."
-#     conda install -y openjdk=11
-# fi
+# Install Java 11 if not present in the existing environment
+if ! java -version 2>&1 | grep -q "openjdk.*11"; then
+    echo "Installing OpenJDK 11 in existing environment..."
+    conda install -y openjdk=11
+fi
 
-# # Create installation directory
-# echo "Setting up InterProScan ${IPS_VERSION}..."
-# mkdir -p interproscan
-# cd interproscan || exit 1
+# Create installation directory
+echo "Setting up InterProScan ${IPS_VERSION}..."
+mkdir -p interproscan
+cd interproscan || exit 1
 
-# # Download InterProScan and checksum
-# echo "Downloading InterProScan..."
-# wget -nc "${IPS_URL}"
-# wget -nc "${IPS_URL}.md5"
+# Download InterProScan and checksum
+echo "Downloading InterProScan..."
+wget -nc "${IPS_URL}"
+wget -nc "${IPS_URL}.md5"
 
-# # Verify MD5 checksum
-# echo "Verifying download integrity..."
-# if ! md5sum -c "${IPS_TAR}.md5"; then
-#     echo "ERROR: MD5 checksum verification failed!"
-#     echo "The downloaded file may be corrupted. Please try downloading again."
-#     exit 1
-# fi
+# Verify MD5 checksum
+echo "Verifying download integrity..."
+if ! md5sum -c "${IPS_TAR}.md5"; then
+    echo "ERROR: MD5 checksum verification failed!"
+    echo "The downloaded file may be corrupted. Please try downloading again."
+    exit 1
+fi
 
-# # Extract package
-# echo "Extracting InterProScan..."
-# tar -xzf "${IPS_TAR}"
+# Extract package
+echo "Extracting InterProScan..."
+tar -xzf "${IPS_TAR}"
 
-# # Verify Java installation in conda env
-# echo "Checking Java environment in conda env..."
-# JAVA_VER=$(java -version 2>&1 | head -n 1 | awk -F '"' '{print $2}')
+# Verify Java installation in conda env
+echo "Checking Java environment in conda env..."
+JAVA_VER=$(java -version 2>&1 | head -n 1 | awk -F '"' '{print $2}')
 
-# if [[ "$JAVA_VER" =~ ^11\. ]]; then
-#     echo "Found compatible Java version in conda env: $JAVA_VER"
-# else
-#     echo "Error: Java version in conda env is not 11.x (found: $JAVA_VER)"
-#     exit 1
-# fi
+if [[ "$JAVA_VER" =~ ^11\. ]]; then
+    echo "Found compatible Java version in conda env: $JAVA_VER"
+else
+    echo "Error: Java version in conda env is not 11.x (found: $JAVA_VER)"
+    exit 1
+fi
 
-# # Run setup
-# echo "Running InterProScan setup..."
-# cd "${IPS_DIR}" || exit 1
-# python setup.py -f interproscan.properties
+# Run setup
+echo "Running InterProScan setup..."
+cd "${IPS_DIR}" || exit 1
+python setup.py -f interproscan.properties
 
-# echo ""
-# echo "InterProScan installation completed in conda environment '${CONDA_ENV_NAME}'!"
-# echo "To use InterProScan, first activate the conda environment:"
-# echo "conda activate ${CONDA_ENV_NAME}"
-# echo "Then add InterProScan to your PATH:"
-# echo "export PATH=\$PATH:$(pwd)"
-# echo "You may also need to set INTERPROSCAN_HOME=$(pwd)"
+echo ""
+echo "InterProScan installation completed in conda environment '${CONDA_ENV_NAME}'!"
+echo "To use InterProScan, first activate the conda environment:"
+echo "conda activate ${CONDA_ENV_NAME}"
+echo "Then add InterProScan to your PATH:"
+echo "export PATH=\$PATH:$(pwd)"
+echo "You may also need to set INTERPROSCAN_HOME=$(pwd)"
 
-# cd ../..
+cd ../..
 
 # install biopython for blast
 echo "Installing Biopython for BLAST support..."
