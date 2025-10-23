@@ -5,5 +5,7 @@ nginx_config/*
 user_data/*
 .gradio/*
 temp/*
+foldseek/*
+foldseek_db/*
 
 *.pyc
