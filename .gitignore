@@ -5,6 +5,8 @@ nginx_config/*
 user_data/*
 .gradio/*
 temp/*
+wet_results/*
+results/*
 foldseek/*
 foldseek_db/*
 
