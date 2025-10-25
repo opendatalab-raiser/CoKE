@@ -169,9 +169,12 @@ class GOIntegrationPipeline:
             # Use the top-k strategy
             for result in foldseek_results[:self.topk]:
                 hit_id = result.get('ID', '')
-                if self.pid2seq.get(hit_id) == sequence:
+                # hit_id like this: AF-P40571-F1-model_v6
+                # we need to get the uniprot id from the hit id: P40571
+                hit_uniprot_id = hit_id.split("-")[1]
+                if self.pid2seq.get(hit_uniprot_id) == sequence:
                     continue
-                go_ids.extend(self._get_go_from_uniprot_id(hit_id))
+                go_ids.extend(self._get_go_from_uniprot_id(hit_uniprot_id))
         else:
             # Use the threshold strategy
             for result in foldseek_results:
@@ -186,17 +189,22 @@ class GOIntegrationPipeline:
 
                     # Get the protein_id of this hit
                     hit_id = result.get('ID', '')
-                    if self.pid2seq.get(hit_id) == sequence:
+                    # hit_id like this: AF-P40571-F1-model_v6
+                    # we need to get the uniprot id from the hit id: P40571
+                    hit_uniprot_id = hit_id.split("-")[1]
+                    if self.pid2seq.get(hit_uniprot_id) == sequence:
                         continue
-                    go_ids.extend(self._get_go_from_uniprot_id(hit_id))
+                    go_ids.extend(self._get_go_from_uniprot_id(hit_uniprot_id))
 
         return go_ids
 
-    def compare_and_select_by_evalue(self, blast_results: List[Dict], 
-                                     foldseek_results: List[Dict],
-                                     sequence: str) -> Dict:
+
+
+    def combine_blast_and_foldseek_results(self, blast_results: List[Dict], 
+                                          foldseek_results: List[Dict],
+                                          sequence: str) -> Dict:
         """
-        Compare BLAST and Foldseek top-1 results by e-value and select the better one.
+        Combine BLAST and Foldseek results instead of selecting one.
 
         Args:
             blast_results: List of BLAST results.
@@ -205,77 +213,97 @@ class GOIntegrationPipeline:
 
         Returns:
             A dictionary containing:
-            - source: "BLAST" or "Foldseek"
-            - hit_id: UniProt ID of the selected hit
-            - evalue: E-value of the selected hit
-            - go_ids: List of GO IDs from the selected hit
+            - go_ids: Combined list of GO IDs from both sources
+            - go_sources: Mapping of GO IDs to their sources and e-values
         """
-        # Find the first non-self hit from BLAST
-        blast_hit = None
-        blast_evalue = float('inf')
-        for result in blast_results:
+        go_ids = set()
+        go_sources = {}
+        
+        # Process BLAST results
+        blast_gos = self.extract_blast_go_ids(blast_results, sequence)
+        blast_evalue = None
+        for result in blast_results[:self.topk if self.topk > 0 else len(blast_results)]:
             hit_id = result.get('ID', '')
             if self.pid2seq.get(hit_id) != sequence:
-                blast_hit = result
-                try:
-                    blast_evalue = float(result.get('E-value', 1.0))
-                except (ValueError, TypeError):
-                    evalue_str = str(result.get('E-value', '1.0'))
-                    blast_evalue = float(evalue_str)
+                blast_evalue = result.get('E-value', None)
                 break
-
-        # Find the first non-self hit from Foldseek
-        foldseek_hit = None
-        foldseek_evalue = float('inf')
-        for result in foldseek_results:
+        
+        for go_id in blast_gos:
+            clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
+            go_ids.add(clean_go_id)
+            go_sources[clean_go_id] = {
+                "source": "BLAST",
+                "evalue": blast_evalue
+            }
+        
+        # Process Foldseek results
+        foldseek_gos = self.extract_foldseek_go_ids(foldseek_results, sequence)
+        foldseek_evalue = None
+        for result in foldseek_results[:self.topk if self.topk > 0 else len(foldseek_results)]:
             hit_id = result.get('ID', '')
-            if self.pid2seq.get(hit_id) != sequence:
-                foldseek_hit = result
-                try:
-                    foldseek_evalue = float(result.get('E-value', 1.0))
-                except (ValueError, TypeError):
-                    evalue_str = str(result.get('E-value', '1.0'))
-                    foldseek_evalue = float(evalue_str)
+            # foldseek hit id like this:AF-P40571-F1-model_v6
+            # we need to get the uniprot id from the hit id: P40571
+            hit_uniprot_id = hit_id.split("-")[1]
+            if self.pid2seq.get(hit_uniprot_id) != sequence:
+                foldseek_evalue = result.get('E-value', None)
                 break
-
-        # Compare and select
-        if blast_hit is None and foldseek_hit is None:
-            return {"source": None, "hit_id": None, "evalue": None, "go_ids": []}
-        elif blast_hit is None:
-            selected_source = "Foldseek"
-            selected_hit = foldseek_hit
-            selected_evalue = foldseek_evalue
-        elif foldseek_hit is None:
-            selected_source = "BLAST"
-            selected_hit = blast_hit
-            selected_evalue = blast_evalue
-        else:
-            # Both have hits, compare e-values
-            if blast_evalue <= foldseek_evalue:
-                selected_source = "BLAST"
-                selected_hit = blast_hit
-                selected_evalue = blast_evalue
+        
+        for go_id in foldseek_gos:
+            clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
+            go_ids.add(clean_go_id)
+            # If GO ID already exists from BLAST, keep the better e-value
+            if clean_go_id in go_sources:
+                existing_evalue = go_sources[clean_go_id]['evalue']
+                if foldseek_evalue and existing_evalue:
+                    try:
+                        existing_eval = float(existing_evalue)
+                        foldseek_eval = float(foldseek_evalue)
+                        if foldseek_eval < existing_eval:
+                            go_sources[clean_go_id] = {
+                                "source": "Foldseek",
+                                "evalue": foldseek_evalue
+                            }
+                    except (ValueError, TypeError):
+                        pass
+                elif foldseek_evalue and not existing_evalue:
+                    go_sources[clean_go_id] = {
+                        "source": "Foldseek", 
+                        "evalue": foldseek_evalue
+                    }
             else:
-                selected_source = "Foldseek"
-                selected_hit = foldseek_hit
-                selected_evalue = foldseek_evalue
-
-        # Get GO IDs from the selected hit
-        hit_id = selected_hit.get('ID', '')
-        go_ids = self._get_go_from_uniprot_id(hit_id)
-
-        # Format e-value
-        if selected_evalue < 0.001:
-            evalue_str = f"{selected_evalue:.1e}"
-        else:
-            evalue_str = str(round(selected_evalue, 4))
-
+                go_sources[clean_go_id] = {
+                    "source": "Foldseek",
+                    "evalue": foldseek_evalue
+                }
+        
         return {
-            "source": selected_source,
-            "hit_id": hit_id,
-            "evalue": evalue_str,
-            "go_ids": go_ids
+            "go_ids": list(go_ids),
+            "go_sources": go_sources
         }
+
+    def extract_foldseek_go_ids(self, foldseek_results: List[Dict], sequence: str) -> List[str]:
+        """
+        Extract GO IDs from Foldseek results.
+
+        Args:
+            foldseek_results: List of Foldseek results.
+            sequence: The current protein sequence (to avoid self-matching).
+
+        Returns:
+            List of GO IDs.
+        """
+        go_ids = []
+        
+        for result in foldseek_results[:self.topk if self.topk > 0 else len(foldseek_results)]:
+            hit_id = result.get('ID', '')
+            # hit_id like this: AF-P40571-F1-model_v6
+            # we need to get the uniprot id from the hit id: P40571
+            hit_uniprot_id = hit_id.split("-")[1]
+            if self.pid2seq.get(hit_uniprot_id) != sequence:
+                gos = self._get_go_from_uniprot_id(hit_uniprot_id)
+                go_ids.extend(gos)
+        
+        return go_ids
 
     def first_level_filtering(self, interproscan_info: Dict, blast_info: Dict, 
                              foldseek_info: Dict = None) -> Dict:
@@ -312,23 +340,20 @@ class GOIntegrationPipeline:
                 go_ids.add(go_id)
                 go_sources[go_id] = {"source": "InterProScan", "evalue": None}
 
-            # Compare BLAST and Foldseek if both are available and use_foldseek is enabled
+            # Combine BLAST and Foldseek if both are available and use_foldseek is enabled
             if self.use_foldseek and foldseek_info and protein_id in blast_info and protein_id in foldseek_info:
                 sequence = blast_info[protein_id]['sequence']
                 blast_results = blast_info[protein_id].get('blast_results', [])
                 foldseek_results = foldseek_info[protein_id].get('foldseek_results', [])
                 
-                # Compare and select the best hit by e-value
-                selected = self.compare_and_select_by_evalue(blast_results, foldseek_results, sequence)
+                # Combine results from both BLAST and Foldseek
+                combined_results = self.combine_blast_and_foldseek_results(blast_results, foldseek_results, sequence)
                 
-                if selected['source'] is not None:
-                    for go_id in selected['go_ids']:
-                        clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
-                        go_ids.add(clean_go_id)
-                        go_sources[clean_go_id] = {
-                            "source": selected['source'],
-                            "evalue": selected['evalue']
-                        }
+                for go_id in combined_results['go_ids']:
+                    clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
+                    go_ids.add(clean_go_id)
+                    if clean_go_id not in go_sources:  # Don't override InterProScan
+                        go_sources[clean_go_id] = combined_results['go_sources'][clean_go_id]
             
             # If not using Foldseek or Foldseek data not available, use BLAST only
             elif protein_id in blast_info:

@@ -2,7 +2,6 @@ import os
 import subprocess
 import tempfile
 from typing import Dict, List, Optional
-from Bio import SeqIO
 
 
 class FoldseekSearch:
@@ -25,13 +24,13 @@ class FoldseekSearch:
             raise RuntimeError("Foldseek is not installed or not in PATH. "
                              "Please install it using: conda install -c bioconda foldseek")
     
-    def run_search(self, fasta_file: str, output_file: str, 
+    def run_search(self, pdb_file: str, output_file: str, 
                    evalue: float = 0.01, temp_dir: str = "temp_foldseek") -> str:
         """
-        Run Foldseek easy-search.
+        Run Foldseek easy-search with PDB file.
         
         Args:
-            fasta_file: Path to the input FASTA file.
+            pdb_file: Path to the input PDB file or directory containing PDB files.
             output_file: Path to the output file.
             evalue: E-value threshold.
             temp_dir: Temporary directory for Foldseek.
@@ -43,17 +42,15 @@ class FoldseekSearch:
         os.makedirs(temp_dir, exist_ok=True)
         
         # Run foldseek easy-search
-        # Format: query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits
+        # The default output format is: query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits
         cmd = [
             'foldseek', 'easy-search',
-            fasta_file,
+            pdb_file,
             self.database,
             output_file,
             temp_dir,
             '--threads', str(self.num_threads),
-            '-e', str(evalue),
-            '--format-mode', '4',
-            '--format-output', 'query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qlen,tlen'
+            '-e', str(evalue)
         ]
         
         try:
@@ -64,13 +61,13 @@ class FoldseekSearch:
             print(f"Error running Foldseek: {e.stderr}")
             raise
     
-    def parse_results(self, result_file: str, fasta_file: str) -> Dict:
+    def parse_results(self, result_file: str, pdb_file: str) -> Dict:
         """
         Parse Foldseek search results.
         
         Args:
             result_file: Path to the Foldseek output file.
-            fasta_file: Path to the input FASTA file (to get sequences).
+            pdb_file: Path to the input PDB file or directory (to get sequences).
             
         Returns:
             A dictionary mapping query IDs to their results.
@@ -91,11 +88,8 @@ class FoldseekSearch:
                 }
             }
         """
-        # Read sequences from FASTA
-        seq_dict = {}
-        with open(fasta_file, 'r') as f:
-            for record in SeqIO.parse(f, 'fasta'):
-                seq_dict[record.id] = str(record.seq)
+        # Extract sequences from PDB files
+        seq_dict = self._extract_sequences_from_pdb(pdb_file)
         
         # Initialize results dictionary
         results = {query_id: [] for query_id in seq_dict.keys()}
@@ -112,17 +106,20 @@ class FoldseekSearch:
                     continue
                 
                 fields = line.strip().split('\t')
-                if len(fields) < 14:
+                if len(fields) < 12:
                     continue
                 
                 query_id = fields[0]
                 target_id = fields[1]
                 identity = float(fields[2])
                 alnlen = int(fields[3])
-                evalue = float(fields[10])
-                bits = float(fields[11])
-                qlen = int(fields[12])
-                tlen = int(fields[13])
+                # E-value is in the second-to-last column (index -2)
+                evalue = float(fields[-2])
+                bits = float(fields[-1])  # Last column is bits
+                # For foldseek easy-search, we don't have qlen and tlen in the output
+                # We'll calculate coverage based on alignment length
+                qlen = alnlen  # Approximation
+                tlen = alnlen  # Approximation
                 
                 # Calculate coverage
                 coverage = (alnlen / qlen) * 100 if qlen > 0 else 0
@@ -161,16 +158,92 @@ class FoldseekSearch:
         
         return formatted_results
 
+    def _extract_sequences_from_pdb(self, pdb_file: str) -> Dict[str, str]:
+        """
+        Extract sequences from PDB file(s).
+        
+        Args:
+            pdb_file: Path to PDB file or directory containing PDB files.
+            
+        Returns:
+            Dictionary mapping PDB IDs to sequences.
+        """
+        seq_dict = {}
+        
+        if os.path.isfile(pdb_file):
+            # Single PDB file
+            pdb_files = [pdb_file]
+        elif os.path.isdir(pdb_file):
+            # Directory containing PDB files
+            pdb_files = [os.path.join(pdb_file, f) for f in os.listdir(pdb_file) 
+                         if f.endswith('.pdb')]
+        else:
+            raise ValueError(f"PDB file or directory not found: {pdb_file}")
+        
+        for pdb_path in pdb_files:
+            try:
+                # Extract PDB ID from filename
+                pdb_id = os.path.basename(pdb_path).replace('.pdb', '')
+                
+                # Read PDB file and extract sequence
+                sequence = self._read_pdb_sequence(pdb_path)
+                if sequence:
+                    seq_dict[pdb_id] = sequence
+                    
+            except Exception as e:
+                print(f"Warning: Could not extract sequence from {pdb_path}: {str(e)}")
+                continue
+        
+        return seq_dict
+    
+    def _read_pdb_sequence(self, pdb_path: str) -> str:
+        """
+        Read amino acid sequence from PDB file.
+        
+        Args:
+            pdb_path: Path to PDB file.
+            
+        Returns:
+            Amino acid sequence string.
+        """
+        sequence = ""
+        atom_lines = []
+        
+        with open(pdb_path, 'r') as f:
+            for line in f:
+                if line.startswith('ATOM') and line[12:16].strip() == 'CA':
+                    # Extract residue information
+                    res_name = line[17:20].strip()
+                    res_num = int(line[22:26].strip())
+                    atom_lines.append((res_num, res_name))
+        
+        # Sort by residue number and extract sequence
+        atom_lines.sort(key=lambda x: x[0])
+        
+        # Map 3-letter codes to 1-letter codes
+        aa_map = {
+            'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
+            'GLN': 'Q', 'GLU': 'E', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+            'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
+            'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V'
+        }
+        
+        for res_num, res_name in atom_lines:
+            if res_name in aa_map:
+                sequence += aa_map[res_name]
+        
+        return sequence
 
-def run_foldseek_analysis(fasta_file: str, database: str = "foldseek_db/sp",
+
+def run_foldseek_analysis(pdb_file: str, database: str = "foldseek_db/sp",
                          evalue: float = 0.01, num_threads: int = 64,
                          output_file: Optional[str] = None,
                          temp_dir: str = "temp_foldseek") -> Dict:
     """
-    High-level function to run Foldseek analysis.
+    High-level function to run Foldseek analysis with PDB files.
     
     Args:
-        fasta_file: Path to the input FASTA file.
+        pdb_file: Path to the input PDB file or directory containing PDB files.
         database: Path to the Foldseek database.
         evalue: E-value threshold.
         num_threads: Number of threads.
@@ -188,10 +261,10 @@ def run_foldseek_analysis(fasta_file: str, database: str = "foldseek_db/sp",
             output_file = tmp.name
     
     # Run search
-    result_file = foldseek.run_search(fasta_file, output_file, evalue, temp_dir)
+    result_file = foldseek.run_search(pdb_file, output_file, evalue, temp_dir)
     
     # Parse results
-    results = foldseek.parse_results(result_file, fasta_file)
+    results = foldseek.parse_results(result_file, pdb_file)
     
     return results
 
