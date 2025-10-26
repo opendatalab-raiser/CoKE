@@ -910,7 +910,7 @@ if __name__ == "__main__":
     )
     demo.launch(
         server_name="0.0.0.0",
-        server_port=33585,
+        server_port=33586,
         share=False,
         debug=True,
         max_threads=50,  # 限制最大线程数
