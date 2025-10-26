@@ -3,7 +3,7 @@ import json
 import sys
 import tempfile
 import gradio as gr
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 from pathlib import Path
 from Bio import SeqIO
 from io import StringIO
@@ -26,6 +26,7 @@ from tools.go_integration_pipeline import GOIntegrationPipeline
 from utils.openai_access_demo import call_chatgpt
 from utils.prompts import FUNCTION_PROMPT,ENZYME_PROMPT
 from utils.get_protrek_text import get_protrek_text
+from tools.foldseek import run_foldseek_analysis
 import multiprocessing
 
 # 数据保存配置
@@ -90,7 +91,7 @@ def get_prompt_template(selected_info_types=None, is_enzyme=False):
     {%- if 'go' in selected_info_types and go_data.status == 'success' %}
 
     GO:{% for go_entry in go_data.go_annotations %}
-    ▢ GO term{{loop.index}}: {{go_entry.go_id}}
+    ▢ GO term{{loop.index}}: {{go_entry.go_id}}{% if go_entry.source %} (source: {{go_entry.source}}, E-value: {{go_entry.evalue}}){% endif %}
     • definition: {{ go_data.all_related_definitions.get(go_entry.go_id, 'not found definition') }}
     {% endfor %}
     {%- endif %}
@@ -162,8 +163,12 @@ class ProteinAnalysisDemo:
         self.go_info_path = 'data/raw_data/go.json'
         self.interpro_data_path = 'data/raw_data/interpro_data.json'
         
-        # Initialize GO integration pipeline
-        self.go_pipeline = GOIntegrationPipeline(topk=self.go_topk)
+        # Initialize GO integration pipeline with Foldseek support
+        self.go_pipeline = GOIntegrationPipeline(
+            topk=self.go_topk,
+            use_foldseek=True,
+            foldseek_database="foldseek_db/sp"
+        )
         
         # Conversation state management - 每个实例独立的状态
         self.current_protein_data = None
@@ -345,6 +350,141 @@ class ProteinAnalysisDemo:
             if os.path.exists(interproscan_json):
                 os.remove(interproscan_json)
     
+    
+    def _validate_sequence_consistency(self, input_sequence: str, pdb_file: Union[str, object, None]) -> tuple:
+        """
+        Validate that PDB file sequence matches the input sequence.
+        
+        Args:
+            input_sequence: Input protein sequence.
+            pdb_file: Uploaded PDB file (single file, not a list).
+            
+        Returns:
+            Tuple of (is_valid, warning_message, pdb_sequences)
+        """
+        if not pdb_file:
+            return True, "", {}
+        
+        pdb_sequences = {}
+        input_sequence = input_sequence.strip().upper().replace('\n', '').replace(' ', '')
+        
+        # Import foldseek functionality
+        from tools.foldseek import FoldseekSearch
+        
+        try:
+            # Handle Gradio file upload object - improved handling
+            pdb_path = None
+            
+            # Try different ways to get the file path
+            if hasattr(pdb_file, 'name'):
+                pdb_path = pdb_file.name
+            elif hasattr(pdb_file, 'orig_name'):
+                pdb_path = pdb_file.orig_name
+            elif isinstance(pdb_file, str):
+                pdb_path = pdb_file
+            else:
+                pdb_path = str(pdb_file)
+            
+            
+            # Check if path is valid and not empty
+            if not pdb_path or pdb_path == "/" or pdb_path == "":
+                return False, f"Invalid PDB file path: '{pdb_path}'. Please ensure you uploaded a valid PDB file.", {}
+            
+            # Validate that it's actually a file, not a directory
+            if not os.path.isfile(pdb_path):
+                return False, f"Invalid PDB file path: {pdb_path}. Please ensure you uploaded a valid PDB file.", {}
+            
+            # Use foldseek's sequence extraction method
+            foldseek = FoldseekSearch()
+            pdb_sequence = foldseek._read_pdb_sequence(pdb_path)
+            
+            if not pdb_sequence:
+                return False, f"Could not extract sequence from PDB file: {os.path.basename(pdb_path)}", {}
+            
+            pdb_sequences[os.path.basename(pdb_path)] = pdb_sequence
+            
+            # Check if sequences match (allowing for some flexibility)
+            warning_msg = ""
+            if pdb_sequence != input_sequence:
+                # Calculate similarity
+                from difflib import SequenceMatcher
+                similarity = SequenceMatcher(None, input_sequence, pdb_sequence).ratio()
+                
+                # Create warning message
+                warning_msg = f"PDB sequence does not match input sequence. Similarity: {similarity:.2%}. Analysis will continue but results may be less accurate."
+                print(f"Warning: PDB sequence has {similarity:.2%} similarity with input sequence")
+            
+        except Exception as e:
+            return False, f"Error processing PDB file {os.path.basename(pdb_path)}: {str(e)}", {}
+        
+        return True, warning_msg, pdb_sequences
+
+    def run_foldseek_analysis(self, pdb_file: Union[str, object, None], temp_dir: str) -> Dict:
+        """
+        Run Foldseek analysis on uploaded PDB file
+        """
+        if not pdb_file:
+            return {}
+        
+        try:
+            # Create a temporary directory for PDB files
+            pdb_temp_dir = os.path.join(temp_dir, "pdb_files")
+            os.makedirs(pdb_temp_dir, exist_ok=True)
+            
+            # Copy uploaded PDB file to temporary directory
+            pdb_file_paths = []
+            try:
+                # Improved file path handling for Gradio uploads
+                source_path = None
+                
+                # Try different ways to get the file path
+                if hasattr(pdb_file, 'name'):
+                    source_path = pdb_file.name
+                elif hasattr(pdb_file, 'orig_name'):
+                    source_path = pdb_file.orig_name
+                elif isinstance(pdb_file, str):
+                    source_path = pdb_file
+                else:
+                    source_path = str(pdb_file)
+                
+                
+                # Check if path is valid and not empty
+                if not source_path or source_path == "/" or source_path == "":
+                    print(f"Warning: Invalid file path: '{source_path}'")
+                    return {}
+                
+                # Validate that it's actually a file
+                if not os.path.isfile(source_path):
+                    print(f"Warning: Invalid file path: {source_path}")
+                    return {}
+                
+                pdb_filename = os.path.basename(source_path)
+                pdb_temp_path = os.path.join(pdb_temp_dir, pdb_filename)
+                shutil.copy2(source_path, pdb_temp_path)
+                pdb_file_paths.append(pdb_temp_path)
+                
+            except Exception as e:
+                print(f"Warning: Could not copy PDB file {pdb_file}: {str(e)}")
+                return {}
+            
+            # Run Foldseek analysis
+            foldseek_output = os.path.join(temp_dir, "foldseek_results.m8")
+            foldseek_info = run_foldseek_analysis(
+                pdb_file=pdb_temp_dir,
+                database="foldseek_db/sp",
+                evalue=self.expect_value,
+                num_threads=self.cpu_cores,
+                output_file=foldseek_output,
+                temp_dir=os.path.join(temp_dir, "foldseek_tmp")
+            )
+            
+            print(f"Foldseek analysis complete: Found results for {len(foldseek_info)} proteins.")
+            return foldseek_info
+            
+        except Exception as e:
+            print(f"Foldseek analysis error: {str(e)}")
+            return {}
+    
     def generate_prompt(self, protein_id: str, interproscan_info: Dict, 
                        protein_go_dict: Dict, question: str, is_enzyme: bool = False) -> str:
         """
@@ -432,7 +572,7 @@ class ProteinAnalysisDemo:
             print(f"Error generating prompt (protein_id: {protein_id}): {str(e)}")
             return f"Error generating prompt: {str(e)}"
     
-    def process_new_protein(self, sequence_input: str, is_enzyme: bool = False) -> tuple:
+    def process_new_protein(self, sequence_input: str, is_enzyme: bool = False, pdb_file: Union[str, object, None] = None) -> tuple:
         """
         Process new protein sequence analysis with resource control
         """
@@ -473,6 +613,15 @@ class ProteinAnalysisDemo:
             else:
                 return None, "Please enter a protein sequence"
             
+            # Validate sequence consistency with PDB file if provided
+            if pdb_file:
+                is_valid, warning_msg, pdb_sequences = self._validate_sequence_consistency(final_sequence, pdb_file)
+                if not is_valid:
+                    return None, f"Error processing PDB file: {warning_msg}"
+                if warning_msg:
+                    print(f"⚠️ Warning: {warning_msg}")
+                print(f"✓ PDB file processed successfully")
+            
             # Create temporary directory and files
             with tempfile.TemporaryDirectory() as temp_dir:
                 try:
@@ -480,7 +629,13 @@ class ProteinAnalysisDemo:
                     temp_fasta = self.create_temp_fasta(final_sequence, "demo_protein")
                     
                     # Run analysis
-                    status_msg = f"Sequence source: {sequence_source}\nSequence length: {len(final_sequence)} amino acids\n\nAnalyzing...\n"
+                    status_msg = f"Sequence source: {sequence_source}\nSequence length: {len(final_sequence)} amino acids\n"
+                    if pdb_file:
+                        if warning_msg:
+                            status_msg += f"⚠️ PDB file: uploaded with warning - {warning_msg}\n"
+                        else:
+                            status_msg += f"✓ PDB file: uploaded and validated\n"
+                    status_msg += "\nAnalyzing...\n"
                     
                     # Step 1: BLAST and InterProScan analysis
                     blast_info = self.run_blast_analysis(temp_fasta, temp_dir)
@@ -489,8 +644,18 @@ class ProteinAnalysisDemo:
                     if not blast_info or not interproscan_info:
                         return None, status_msg + "Analysis failed: Unable to get BLAST or InterProScan results"
                     
-                    # Step 2: Integrate GO information
-                    protein_go_dict = self.go_pipeline.first_level_filtering(interproscan_info, blast_info)
+                    # Step 1.5: Run Foldseek analysis if PDB file is provided
+                    foldseek_info = {}
+                    if pdb_file:
+                        print("Running Foldseek analysis on uploaded PDB file...")
+                        foldseek_info = self.run_foldseek_analysis(pdb_file, temp_dir)
+                        if foldseek_info:
+                            status_msg += f"Foldseek analysis complete: Found results for {len(foldseek_info)} proteins.\n"
+                        else:
+                            status_msg += "Foldseek analysis completed with no results.\n"
+                    
+                    # Step 2: Integrate GO information (including Foldseek if available)
+                    protein_go_dict = self.go_pipeline.first_level_filtering(interproscan_info, blast_info, foldseek_info)
                     
                     # Save protein data
                     self.current_protein_data = {
@@ -499,6 +664,7 @@ class ProteinAnalysisDemo:
                         "sequence_source": sequence_source,
                         "interproscan_info": interproscan_info,
                         "protein_go_dict": protein_go_dict,
+                        "foldseek_info": foldseek_info,
                         "is_enzyme": is_enzyme
                     }
                     
@@ -587,6 +753,14 @@ def create_demo():
                     info="Check this to use specialized enzyme analysis template"
                 )
                 
+                gr.Markdown("### 🧬 PDB Structure Files (Optional)")
+                pdb_upload = gr.Files(
+                    label="Upload PDB Files",
+                    file_types=[".pdb"],
+                    file_count="single"
+                )
+                # gr.Markdown("*Upload PDB structure files for Foldseek analysis (optional). The sequence in PDB files should match the input protein sequence.*")
+                
                 analyze_btn = gr.Button("🔍 Analyze Protein", variant="primary", size="lg")
                 
                 analysis_status = gr.Textbox(
@@ -628,11 +802,11 @@ def create_demo():
         gr.Markdown("### 💡 Examples")
         gr.Examples(
             examples=[
-                ["MKALIVLGLVLLSVTVQGKVFERCELARTLKRLGMDGYRGISLANWMCLAKWESGYNTRATNYNAGDRSTDYGIFQINSRYWCNDGKTPGAVNACHLSCSALLQDNIADAVACAKRVVRDPQGIRAWVAWRNRCQNRDVRQYVQGCGV", False],
-                ["MGQTKSKIKSKYASYLSFIKILLKRGGVKVSTKNLIKLFQIIEQFCPWFPEQGTLDLKDWKRIGKELKQAGRKGNIIPLTVWNDWAIIKAALEPFQTEEDSVSVSDAPGSCIIDCNENTRKKSQKETESLHCEYVAEPVMAQSTQNVDYNQLQEVIYPETLKLEGKVPELVGPSESKPRGTSRLPAGQVPVTLQPQTQVKENKTQPPVAYQYWPPAELQYRPPLESQYGYPGMPPAPQGRAPYPQPPTRRLNPTAPPSRRGSELHEIIDKSRKEGDTEAWQFPVTLEPMPPGEGAQEGEPPTVEARYKSFSIKMLKDMKEGVKQYGPNSPYMRTLLDSIAHGHRLIPYDWEILAKSSLSPSQFLQFKTWWIDGVQEQVRRNRAANPPVNIDADQLLGIGQNWSTISQQALMQNEAIEQVRAICLRAWEKIQDPGSTCPSFNTVRQGSKEPYPDFVARLQDVAQKSIAIEKARKVIVELMAYENPNPECQSAIKPLKGKVPAGSDVISEYVKACDGMGGAMHKAMLMAQAITGVVLGGQVRTFGGKCYNCGQIGHLKKNCPVLNKQNITIQATTTGREPPDLCPRCKKGKHWASQCRSKFDKNGQPLSGNEQRGQPQAPQQTGAFPIQPFVPHGFQGQQPPLSQVFQGISQLPQYNNCPPPQAAVQQ", False],
-                ["MHVPQFISTGALLALLARPAAAHTRMFSVWVNGVDQGDGQNVYIRTPPNTDPIKDLASPALACNVKGGEPVPQFVSASAGDKLTFEWYRVKRGDDIIDPSHSGPITTWIAAFTSPTMDGTGPVWSKIHEEGYDASTKSWAVDKLIANKGMWDFTLPSQLKPGKYMLRQEIVAHHESDATFDKNPKRGAQFYPSCVQVDVKGVGGDAVPDQAFDFNKGYKYSDPGIAFDMYTDFDSYPIPGPPVWDAQDEGCCFIDGVDTTSVKEVVKQIICVLK", True]
+                ["MKALIVLGLVLLSVTVQGKVFERCELARTLKRLGMDGYRGISLANWMCLAKWESGYNTRATNYNAGDRSTDYGIFQINSRYWCNDGKTPGAVNACHLSCSALLQDNIADAVACAKRVVRDPQGIRAWVAWRNRCQNRDVRQYVQGCGV", False, None],
+                ["MGQTKSKIKSKYASYLSFIKILLKRGGVKVSTKNLIKLFQIIEQFCPWFPEQGTLDLKDWKRIGKELKQAGRKGNIIPLTVWNDWAIIKAALEPFQTEEDSVSVSDAPGSCIIDCNENTRKKSQKETESLHCEYVAEPVMAQSTQNVDYNQLQEVIYPETLKLEGKVPELVGPSESKPRGTSRLPAGQVPVTLQPQTQVKENKTQPPVAYQYWPPAELQYRPPLESQYGYPGMPPAPQGRAPYPQPPTRRLNPTAPPSRRGSELHEIIDKSRKEGDTEAWQFPVTLEPMPPGEGAQEGEPPTVEARYKSFSIKMLKDMKEGVKQYGPNSPYMRTLLDSIAHGHRLIPYDWEILAKSSLSPSQFLQFKTWWIDGVQEQVRRNRAANPPVNIDADQLLGIGQNWSTISQQALMQNEAIEQVRAICLRAWEKIQDPGSTCPSFNTVRQGSKEPYPDFVARLQDVAQKSIAIEKARKVIVELMAYENPNPECQSAIKPLKGKVPAGSDVISEYVKACDGMGGAMHKAMLMAQAITGVVLGGQVRTFGGKCYNCGQIGHLKKNCPVLNKQNITIQATTTGREPPDLCPRCKKGKHWASQCRSKFDKNGQPLSGNEQRGQPQAPQQTGAFPIQPFVPHGFQGQQPPLSQVFQGISQLPQYNNCPPPQAAVQQ", False, None],
+                ["MHVPQFISTGALLALLARPAAAHTRMFSVWVNGVDQGDGQNVYIRTPPNTDPIKDLASPALACNVKGGEPVPQFVSASAGDKLTFEWYRVKRGDDIIDPSHSGPITTWIAAFTSPTMDGTGPVWSKIHEEGYDASTKSWAVDKLIANKGMWDFTLPSQLKPGKYMLRQEIVAHHESDATFDKNPKRGAQFYPSCVQVDVKGVGGDAVPDQAFDFNKGYKYSDPGIAFDMYTDFDSYPIPGPPVWDAQDEGCCFIDGVDTTSVKEVVKQIICVLK", True, None]
             ],
-            inputs=[sequence_input, is_enzyme]
+            inputs=[sequence_input, is_enzyme, pdb_upload]
         )
 
         # Contact information
@@ -644,12 +818,12 @@ def create_demo():
         session_info = gr.Markdown("", visible=False)
         
         # Event handler functions
-        def process_protein(sequence_input, is_enzyme, analyzer):
+        def process_protein(sequence_input, is_enzyme, pdb_file, analyzer):
             # 为每个会话创建新的analyzer实例（如果还没有）
             if analyzer is None:
                 analyzer = ProteinAnalysisDemo(cpu_cores=10)  # 每个分析限制10核心
             
-            protein_data, status = analyzer.process_new_protein(sequence_input, is_enzyme)
+            protein_data, status = analyzer.process_new_protein(sequence_input, is_enzyme, pdb_file)
             session_msg = f"\n\n📊 **Session Info**: ID `{analyzer.session_id[:8]}...` | Questions: {len(analyzer.conversation_history)}"
             return status, [], analyzer, session_msg  # 返回analyzer以保持会话状态
         
@@ -699,7 +873,7 @@ def create_demo():
         # Bind events
         analyze_btn.click(
             fn=process_protein,
-            inputs=[sequence_input, is_enzyme, analyzer_state],
+            inputs=[sequence_input, is_enzyme, pdb_upload, analyzer_state],
             outputs=[analysis_status, chatbot, analyzer_state, session_info]
         )
         
@@ -736,7 +910,7 @@ if __name__ == "__main__":
     )
     demo.launch(
         server_name="0.0.0.0",
-        server_port=30003,
+        server_port=33586,
         share=False,
         debug=True,
         max_threads=50,  # 限制最大线程数
