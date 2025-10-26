@@ -2,6 +2,7 @@ import os
 import json
 import sys
 import argparse
+import requests
 from typing import Dict, List, Optional
 from pathlib import Path
 from tqdm import tqdm
@@ -42,6 +43,11 @@ class IntegratedProteinPipeline:
                  use_foldseek: bool = True,  # Whether to use Foldseek
                  foldseek_database: str = "foldseek_db/sp",  # Foldseek database path
                  foldseek_num_threads: int = 64,  # Number of Foldseek threads
+                 pdb_dir: str = None,  # Directory containing PDB files for foldseek
+                 auto_download_pdb: bool = True,  # Whether to automatically download PDB files
+                 pdb_download_timeout: int = 30,  # Timeout for PDB download in seconds
+                 pdb_download_processes: int = 64,  # Number of processes for PDB download
+                 failed_pdb_ids_path: str = None,  # Path to save failed PDB download IDs
                  args: argparse.Namespace = None):
         """
         Integrated protein analysis pipeline.
@@ -84,6 +90,11 @@ class IntegratedProteinPipeline:
         self.use_foldseek = use_foldseek
         self.foldseek_database = foldseek_database
         self.foldseek_num_threads = foldseek_num_threads
+        self.pdb_dir = pdb_dir
+        self.auto_download_pdb = auto_download_pdb
+        self.pdb_download_timeout = pdb_download_timeout
+        self.pdb_download_processes = pdb_download_processes
+        self.failed_pdb_ids_path = failed_pdb_ids_path
 
         # File path configuration
         self.pfam_descriptions_path = pfam_descriptions_path
@@ -92,6 +103,7 @@ class IntegratedProteinPipeline:
         self.lmdb_path = lmdb_path
         self.interproscan_info_path = args.interproscan_info_path if args else None
         self.blast_info_path = args.blast_info_path if args else None
+        self.foldseek_info_path = args.foldseek_info_path if args else None
         self.protrek_dir = args.protrek_dir if args else None
 
         # Initialize the GO integration pipeline
@@ -139,7 +151,7 @@ class IntegratedProteinPipeline:
         {%- if 'go' in selected_info_types and go_data.status == 'success' %}
 
         GO:{% for go_entry in go_data.go_annotations %}
-        ▢ GO term{{loop.index}}: {{go_entry.go_id}} (来源: {{go_entry.source}}, E-value: {{go_entry.evalue}})
+        ▢ GO term{{loop.index}}: {{go_entry.go_id}} (source: {{go_entry.source}}, E-value: {{go_entry.evalue}})
         • definition: {{ go_data.all_related_definitions.get(go_entry.go_id, 'not found definition') }}
         {% endfor %}
         {%- endif %}
@@ -174,6 +186,104 @@ class IntegratedProteinPipeline:
         """
 
         return PROMPT_TEMPLATE
+
+    def _pdb_to_fasta(self, pdb_dir: str, output_fasta: str) -> str:
+        """
+        Convert PDB files to FASTA format for BLAST and InterProScan analysis.
+        
+        Args:
+            pdb_dir: Directory containing PDB files.
+            output_fasta: Path to output FASTA file.
+            
+        Returns:
+            Path to the generated FASTA file.
+        """
+        # Extract sequences from PDB files directly
+        seq_dict = self._extract_sequences_from_pdb(pdb_dir)
+        
+        # Write FASTA file
+        with open(output_fasta, 'w') as f:
+            for pdb_id, sequence in seq_dict.items():
+                f.write(f">{pdb_id}\n{sequence}\n")
+        
+        print(f"Converted {len(seq_dict)} PDB files to FASTA format: {output_fasta}")
+        return output_fasta
+
+    def _extract_sequences_from_pdb(self, pdb_dir: str) -> Dict[str, str]:
+        """
+        Extract sequences from PDB file(s).
+        
+        Args:
+            pdb_dir: Path to PDB file or directory containing PDB files.
+            
+        Returns:
+            Dictionary mapping PDB IDs to sequences.
+        """
+        seq_dict = {}
+        
+        if os.path.isfile(pdb_dir):
+            # Single PDB file
+            pdb_files = [pdb_dir]
+        elif os.path.isdir(pdb_dir):
+            # Directory containing PDB files
+            pdb_files = [os.path.join(pdb_dir, f) for f in os.listdir(pdb_dir) 
+                         if f.endswith('.pdb')]
+        else:
+            raise ValueError(f"PDB file or directory not found: {pdb_dir}")
+        
+        for pdb_path in pdb_files:
+            try:
+                # Extract PDB ID from filename
+                pdb_id = os.path.basename(pdb_path).replace('.pdb', '')
+                
+                # Read PDB file and extract sequence
+                sequence = self._read_pdb_sequence(pdb_path)
+                if sequence:
+                    seq_dict[pdb_id] = sequence
+                    
+            except Exception as e:
+                print(f"Warning: Could not extract sequence from {pdb_path}: {str(e)}")
+                continue
+        
+        return seq_dict
+    
+    def _read_pdb_sequence(self, pdb_path: str) -> str:
+        """
+        Read amino acid sequence from PDB file.
+        
+        Args:
+            pdb_path: Path to PDB file.
+            
+        Returns:
+            Amino acid sequence string.
+        """
+        sequence = ""
+        atom_lines = []
+        
+        with open(pdb_path, 'r') as f:
+            for line in f:
+                if line.startswith('ATOM') and line[12:16].strip() == 'CA':
+                    # Extract residue information
+                    res_name = line[17:20].strip()
+                    res_num = int(line[22:26].strip())
+                    atom_lines.append((res_num, res_name))
+        
+        # Sort by residue number and extract sequence
+        atom_lines.sort(key=lambda x: x[0])
+        
+        # Map 3-letter codes to 1-letter codes
+        aa_map = {
+            'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
+            'GLN': 'Q', 'GLU': 'E', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+            'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
+            'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V'
+        }
+        
+        for res_num, res_name in atom_lines:
+            if res_name in aa_map:
+                sequence += aa_map[res_name]
+        
+        return sequence
 
     def _check_and_run_protrek(self, input_fasta: str, protrek_dir: str):
         """
@@ -226,12 +336,178 @@ class IntegratedProteinPipeline:
             print("Hint: You can run the ProTrek script manually later, or it will be automatically detected on the next pipeline run.")
             raise
 
-    def step1_run_blast_and_interproscan(self, input_fasta: str, temp_dir: str = "temp") -> tuple:
+    def _check_and_download_pdb_files(self, input_fasta: str, pdb_dir: str) -> str:
+        """
+        检查并下载 PDB 文件（如果需要的话），支持重试机制。
+        
+        Args:
+            input_fasta: 输入 FASTA 文件路径
+            pdb_dir: PDB 文件目录
+            
+        Returns:
+            更新后的 pdb_dir 路径
+        """
+        if not self.auto_download_pdb:
+            print("自动下载 PDB 文件功能已禁用")
+            return pdb_dir
+            
+        # 从 FASTA 文件中提取蛋白质 ID
+        protein_ids = []
+        with open(input_fasta, 'r') as f:
+            for line in f:
+                if line.startswith('>'):
+                    protein_id = line.strip()[1:].split()[0]  # 取第一个空格前的部分作为 ID
+                    protein_ids.append(protein_id)
+        
+        print(f"从 FASTA 文件中提取到 {len(protein_ids)} 个蛋白质 ID")
+        
+        # 检查哪些 PDB 文件缺失
+        missing_ids = []
+        os.makedirs(pdb_dir, exist_ok=True)
+        
+        for protein_id in protein_ids:
+            pdb_file = os.path.join(pdb_dir, f"AF-{protein_id}-F1-model_v6.pdb")
+            if not os.path.exists(pdb_file):
+                missing_ids.append(protein_id)
+        
+        if not missing_ids:
+            print(f"✓ 所有 PDB 文件已存在")
+            return pdb_dir
+        
+        print(f"⚠ 发现 {len(missing_ids)} 个蛋白质缺少 PDB 文件，开始下载...")
+        
+        # 使用多进程下载 PDB 文件，支持重试
+        self._download_pdb_files_with_retry(missing_ids, pdb_dir)
+        
+        return pdb_dir
+    
+    def _download_pdb_files_with_retry(self, protein_ids: List[str], pdb_dir: str, max_retries: int = 10) -> None:
+        """
+        带重试机制的PDB文件下载。
+        
+        Args:
+            protein_ids: 需要下载的蛋白质 ID 列表
+            pdb_dir: PDB 文件保存目录
+            max_retries: 最大重试次数
+        """
+        failed_ids = protein_ids.copy()
+        retry_count = 0
+        
+        while failed_ids and retry_count < max_retries:
+            retry_count += 1
+            print(f"\n第 {retry_count} 次尝试下载 PDB 文件...")
+            print(f"剩余需要下载的蛋白质数量: {len(failed_ids)}")
+            
+            # 下载当前失败的ID
+            self._download_pdb_files_parallel(failed_ids, pdb_dir)
+            
+            # 检查哪些文件仍然缺失
+            still_missing = []
+            for protein_id in failed_ids:
+                pdb_file = os.path.join(pdb_dir, f"AF-{protein_id}-F1-model_v6.pdb")
+                if not os.path.exists(pdb_file):
+                    still_missing.append(protein_id)
+            
+            failed_ids = still_missing
+            
+            if failed_ids:
+                print(f"第 {retry_count} 次尝试后，仍有 {len(failed_ids)} 个蛋白质下载失败")
+                if retry_count < max_retries:
+                    print(f"将在第 {retry_count + 1} 次尝试中重新下载这些蛋白质...")
+            else:
+                print(f"✓ 所有 PDB 文件下载成功！")
+                break
+        
+        if failed_ids:
+            print(f"\n⚠ 经过 {max_retries} 次尝试，仍有 {len(failed_ids)} 个蛋白质无法下载")
+            print("这些蛋白质将没有对应的 PDB 结构，但会继续处理序列信息")
+        else:
+            print(f"\n✓ 所有 PDB 文件下载完成！")
+    
+    def _download_pdb_files_parallel(self, protein_ids: List[str], pdb_dir: str) -> None:
+        """
+        并行下载 PDB 文件。
+        
+        Args:
+            protein_ids: 需要下载的蛋白质 ID 列表
+            pdb_dir: PDB 文件保存目录
+        """
+        print(f"开始并行下载 {len(protein_ids)} 个 PDB 文件...")
+        
+        def download_single_pdb(process_id, idx, protein_id, writer):
+            """下载单个 PDB 文件"""
+            url = f"https://alphafold.ebi.ac.uk/files/AF-{protein_id}-F1-model_v6.pdb"
+            output_path = os.path.join(pdb_dir, f"AF-{protein_id}-F1-model_v6.pdb")
+            
+            try:
+                response = requests.get(url, timeout=self.pdb_download_timeout)
+                if response.status_code == 200:
+                    with open(output_path, 'wb') as f:
+                        f.write(response.content)
+                    print(f"✓ 成功下载 {protein_id}")
+                    return None
+                else:
+                    print(f"✗ 下载 {protein_id} 失败，状态码: {response.status_code}")
+                    if writer:
+                        writer.write(f"{protein_id}\n")
+                    return protein_id
+            except Exception as e:
+                print(f"✗ 下载 {protein_id} 时出错: {str(e)}")
+                if writer:
+                    writer.write(f"{protein_id}\n")
+                return protein_id
+        
+        # 设置失败 ID 保存路径
+        if self.failed_pdb_ids_path is None:
+            failed_ids_path = os.path.join(pdb_dir, "failed_downloads.txt")
+        else:
+            failed_ids_path = self.failed_pdb_ids_path
+        
+        # 使用 MPR 进行并行下载
+        mprs = MultipleProcessRunnerSimplifier(
+            data=protein_ids,
+            do=download_single_pdb,
+            n_process=self.pdb_download_processes,
+            split_strategy="queue",
+            save_path=failed_ids_path,
+            return_results=True
+        )
+        
+        results = mprs.run()
+        
+        # 统计下载结果
+        failed_ids = [result for result in results if result is not None]
+        success_count = len(protein_ids) - len(failed_ids)
+        
+        print(f"PDB 下载完成: 成功 {success_count}/{len(protein_ids)}")
+        if failed_ids:
+            print(f"下载失败的蛋白质 ID 已保存到: {failed_ids_path}")
+    
+    def _is_uniprot_id(self, protein_id: str) -> bool:
+        """
+        判断蛋白质 ID 是否为 UniProt ID 格式。
+        
+        Args:
+            protein_id: 蛋白质 ID
+            
+        Returns:
+            是否为 UniProt ID
+        """
+        # UniProt ID 通常是 6 个字符，包含字母和数字
+        # 例如: P12345, Q9Y6K9, A0A0A0A0A0
+        if len(protein_id) == 6 and protein_id.isalnum():
+            return True
+        # 也支持更长的 UniProt ID
+        if len(protein_id) >= 6 and protein_id.isalnum():
+            return True
+        return False
+
+    def step1_run_tools(self, input_fasta: str, temp_dir: str = "temp") -> tuple:
         """
         Step 1: Run BLAST, InterProScan, and optionally Foldseek analysis.
 
         Args:
-            input_fasta: Path to the input FASTA file.
+            input_fasta: Path to the input FASTA file (or PDB directory if using PDB input).
             temp_dir: Directory for temporary files.
 
         Returns:
@@ -242,73 +518,127 @@ class IntegratedProteinPipeline:
         # Create temporary directory
         os.makedirs(temp_dir, exist_ok=True)
 
+        # 如果启用了自动下载 PDB 文件且 pdb_dir 存在，则检查并下载缺失的 PDB 文件
+        if self.auto_download_pdb and self.pdb_dir:
+            print("检查并下载缺失的 PDB 文件...")
+            self.pdb_dir = self._check_and_download_pdb_files(input_fasta, self.pdb_dir)
+
         # Get sequence dictionary
         seq_dict = get_seqnid(input_fasta)
         print(f"Read {len(seq_dict)} sequences.")
 
         # Run BLAST
         print("Running BLAST analysis...")
-        blast_xml = os.path.join(temp_dir, "blast_results.xml")
-        blast_cmd = NcbiblastpCommandline(
-            query=input_fasta,
-            db=self.blast_database,
-            out=blast_xml,
-            outfmt=5,  # XML format
-            evalue=self.expect_value,
-            num_threads=self.blast_num_threads
-        )
-        blast_cmd()
+        if self.blast_info_path is None:
+            blast_xml = os.path.join(temp_dir, "blast_results.xml")
+            blast_cmd = NcbiblastpCommandline(
+                query=input_fasta,
+                db=self.blast_database,
+                out=blast_xml,
+                outfmt=5,  # XML format
+                evalue=self.expect_value,
+                num_threads=self.blast_num_threads
+            )
+            blast_cmd()
 
-        # Extract BLAST results
-        blast_results = extract_blast_metrics(blast_xml)
-        blast_info = {}
-        for uid, info in blast_results.items():
-            blast_info[uid] = {"sequence": seq_dict[uid], "blast_results": info}
+            # Extract BLAST results
+            blast_results = extract_blast_metrics(blast_xml)
+            blast_info = {}
+            for uid, info in blast_results.items():
+                blast_info[uid] = {"sequence": seq_dict[uid], "blast_results": info}
+        else:
+            blast_info = json.load(open(self.blast_info_path))
 
         # Run Foldseek if enabled
         foldseek_info = {}
         if self.use_foldseek:
             print("Running Foldseek analysis...")
-            try:
-                from tools.foldseek import run_foldseek_analysis
-                foldseek_output = os.path.join(temp_dir, "foldseek_results.m8")
-                foldseek_info = run_foldseek_analysis(
-                    fasta_file=input_fasta,
-                    database=self.foldseek_database,
-                    evalue=self.expect_value,
-                    num_threads=self.foldseek_num_threads,
-                    output_file=foldseek_output,
-                    temp_dir=os.path.join(temp_dir, "foldseek_tmp")
-                )
-                print(f"Foldseek analysis complete: Found results for {len(foldseek_info)} proteins.")
-            except Exception as e:
-                print(f"Warning: Foldseek analysis failed: {str(e)}")
-                print("Continuing without Foldseek results...")
-                foldseek_info = {}
+            if self.foldseek_info_path is None:
+                try:
+                    from tools.foldseek import run_foldseek_analysis
+                    foldseek_output = os.path.join(temp_dir, "foldseek_results.m8")
+                    
+                    # Use PDB directory for foldseek analysis
+                    if self.pdb_dir and os.path.isdir(self.pdb_dir):
+                        pdb_dir = self.pdb_dir
+                    else:
+                        # Try to find PDB files in the same directory as input_fasta
+                        input_dir = os.path.dirname(input_fasta)
+                        pdb_dir = input_dir
+                        print(f"Warning: No PDB directory specified, using input directory: {pdb_dir}")
+                    
+                    foldseek_info = run_foldseek_analysis(
+                        pdb_file=pdb_dir,
+                        database=self.foldseek_database,
+                        evalue=self.expect_value,
+                        num_threads=self.foldseek_num_threads,
+                        output_file=foldseek_output,
+                        temp_dir=os.path.join(temp_dir, "foldseek_tmp")
+                    )
+                    print(f"Foldseek analysis complete: Found results for {len(foldseek_info)} proteins.")
+                except Exception as e:
+                    print(f"Warning: Foldseek analysis failed: {str(e)}")
+                    print("Continuing without Foldseek results...")
+                    foldseek_info = {}
+            else:
+                foldseek_info = json.load(open(self.foldseek_info_path))
+            
+            # 确保 foldseek_info 的键与 FASTA 序列 ID 匹配
+            # 如果 foldseek 结果中的键是 PDB 文件名格式，需要转换为原始蛋白质 ID
+            if foldseek_info:
+                corrected_foldseek_info = {}
+                for protein_id in seq_dict.keys():
+                    # 尝试不同的键格式来匹配 foldseek 结果
+                    possible_keys = [
+                        protein_id,  # 原始 ID
+                        f"AF-{protein_id}-F1-model_v6",  # PDB 文件名格式
+                        f"AF-{protein_id}-F1-model_v6.pdb"  # 完整文件名
+                    ]
+                    
+                    matched_key = None
+                    for key in possible_keys:
+                        if key in foldseek_info:
+                            matched_key = key
+                            break
+                    
+                    if matched_key:
+                        corrected_foldseek_info[protein_id] = foldseek_info[matched_key]
+                    else:
+                        # 如果没有找到对应的 foldseek 结果，创建空结果
+                        corrected_foldseek_info[protein_id] = {
+                            "sequence": seq_dict[protein_id],
+                            "foldseek_results": []
+                        }
+                        print(f"Warning: No Foldseek results found for protein {protein_id}")
+                
+                foldseek_info = corrected_foldseek_info
 
         # Run InterProScan
         print("Running InterProScan analysis...")
-        interproscan_json = os.path.join(temp_dir, "interproscan_results.json")
-        interproscan = InterproScan(self.interproscan_path)
-        input_args = {
-            "fasta_file": input_fasta,
-            "goterms": True,
-            "pathways": True,
-            "save_dir": interproscan_json
-        }
-        interproscan.run(**input_args)
+        if self.interproscan_info_path is None:
+            interproscan_json = os.path.join(temp_dir, "interproscan_results.json")
+            interproscan = InterproScan(self.interproscan_path)
+            input_args = {
+                "fasta_file": input_fasta,
+                "goterms": True,
+                "pathways": True,
+                "save_dir": interproscan_json
+            }
+            interproscan.run(**input_args)
 
-        # Extract InterProScan results
-        interproscan_results = extract_interproscan_metrics(
-            interproscan_json,
-            librarys=self.interproscan_libraries
-        )
+            # Extract InterProScan results
+            interproscan_results = extract_interproscan_metrics(
+                interproscan_json,
+                librarys=self.interproscan_libraries
+            )
 
-        interproscan_info = {}
-        for id, seq in seq_dict.items():
-            info = interproscan_results[seq]
-            info = rename_interproscan_keys(info)
-            interproscan_info[id] = {"sequence": seq, "interproscan_results": info}
+            interproscan_info = {}
+            for id, seq in seq_dict.items():
+                info = interproscan_results[seq]
+                info = rename_interproscan_keys(info)
+                interproscan_info[id] = {"sequence": seq, "interproscan_results": info}
+        else:
+            interproscan_info = json.load(open(self.interproscan_info_path))
 
         # Note: Do not clean up temp files here, as they might be saved to the tool_results directory.
         # Cleanup is handled in the finally block of the run() method.
@@ -748,6 +1078,7 @@ class IntegratedProteinPipeline:
                         result = {
                             'protein_id': protein_id,
                             'index': index,
+                            'prompt': prompt,
                             'question': question,
                             'ground_truth': ground_truth,
                             'llm_answer': llm_response
@@ -756,6 +1087,7 @@ class IntegratedProteinPipeline:
                         result = {
                             'protein_id': protein_id,
                             'index': index,
+                            'prompt': prompt,
                             'question': question,
                             'ground_truth': ground_truth,
                             'llm_answer': llm_response,
@@ -929,8 +1261,8 @@ class IntegratedProteinPipeline:
 
         try:
             # Step 1: Run BLAST, InterProScan, and Foldseek
-            if self.interproscan_info_path is None or self.blast_info_path is None:
-                interproscan_info, blast_info, foldseek_info = self.step1_run_blast_and_interproscan(
+            if self.interproscan_info_path is None or self.blast_info_path is None or self.foldseek_info_path is None:
+                interproscan_info, blast_info, foldseek_info = self.step1_run_tools(
                     input_fasta, temp_dir
                 )
                 # Save intermediate results to the tool_results directory
@@ -948,7 +1280,10 @@ class IntegratedProteinPipeline:
             else:
                 interproscan_info = json.load(open(self.interproscan_info_path))
                 blast_info = json.load(open(self.blast_info_path))
-                foldseek_info = {}
+                if self.foldseek_info_path:
+                    foldseek_info = json.load(open(self.foldseek_info_path))
+                else:
+                    foldseek_info = {}
 
             # Step 2: Integrate GO information
             protein_go_dict = self.step2_integrate_go_information(
@@ -988,6 +1323,7 @@ def main():
     parser.add_argument("--temp_dir", type=str, default="temp", help="Directory for temporary files.")
     parser.add_argument('--interproscan_info_path', type=str, default=None, help="Path to InterProScan results file (skips BLAST and InterProScan steps if provided).")
     parser.add_argument('--blast_info_path', type=str, default=None, help="Path to BLAST results file (skips BLAST and InterProScan steps if provided).")
+    parser.add_argument('--foldseek_info_path', type=str, default=None, help="Path to Foldseek results file (skips Foldseek steps if provided).")
 
     # Parallel processing parameters
     parser.add_argument("--n_process_prompt", type=int, default=256, help="Number of parallel processes for prompt generation.")
@@ -1010,6 +1346,18 @@ def main():
                        help="Path to the Foldseek database (default: foldseek_db/sp).")
     parser.add_argument("--foldseek_num_threads", type=int, default=64,
                        help="Number of threads for Foldseek (default: 64).")
+    parser.add_argument("--pdb_dir", type=str, default=None,
+                       help="Directory containing PDB files for foldseek analysis.")
+    
+    # PDB download parameters
+    parser.add_argument("--auto_download_pdb", action="store_true", default=True,
+                       help="Whether to automatically download PDB files (default: True).")
+    parser.add_argument("--pdb_download_timeout", type=int, default=30,
+                       help="Timeout for PDB download in seconds (default: 30).")
+    parser.add_argument("--pdb_download_processes", type=int, default=64,
+                       help="Number of processes for PDB download (default: 64).")
+    parser.add_argument("--failed_pdb_ids_path", type=str, default=None,
+                       help="Path to save failed PDB download IDs.")
 
     # GO integration parameters
     parser.add_argument("--go_topk", type=int, default=2, help="Top-k parameter for GO integration.")
@@ -1046,6 +1394,11 @@ def main():
         use_foldseek=args.use_foldseek,
         foldseek_database=args.foldseek_database,
         foldseek_num_threads=args.foldseek_num_threads,
+        pdb_dir=args.pdb_dir,
+        auto_download_pdb=args.auto_download_pdb,
+        pdb_download_timeout=args.pdb_download_timeout,
+        pdb_download_processes=args.pdb_download_processes,
+        failed_pdb_ids_path=args.failed_pdb_ids_path,
         args=args
     )
 
