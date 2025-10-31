@@ -67,6 +67,9 @@ def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dic
         
     Returns:
         List: A list of QA pairs.
+    
+    Note: The 'answer' field will be saved as 'ground_truth' in LMDB format
+    to match the format expected by integrated_pipeline.py
     """
     qa_pairs = []
     
@@ -75,7 +78,7 @@ def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dic
         qa_pairs.append({
             'protein_id': protein_id,
             'question': 'What is the function of this protein?',
-            'answer': protein_info['function'],
+            'answer': protein_info['function'],  # Saved as ground_truth in LMDB
             'question_type': 'function'
         })
     
@@ -84,7 +87,7 @@ def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dic
         qa_pairs.append({
             'protein_id': protein_id,
             'question': 'What is the pathway of this protein?',
-            'answer': protein_info['pathway'],
+            'answer': protein_info['pathway'],  # Saved as ground_truth in LMDB
             'question_type': 'pathway'
         })
     
@@ -93,7 +96,7 @@ def generate_qa_pairs(protein_id: str, protein_info: Dict[str, str]) -> List[Dic
         qa_pairs.append({
             'protein_id': protein_id,
             'question': 'What is the subcellular location of this protein?',
-            'answer': protein_info['subcellular_location'],
+            'answer': protein_info['subcellular_location'],  # Saved as ground_truth in LMDB
             'question_type': 'subcellular_location'
         })
     
@@ -106,18 +109,28 @@ def save_to_lmdb(qa_pairs: List[Dict], lmdb_path: str):
     Args:
         qa_pairs: A list of QA pairs.
         lmdb_path: The path to the LMDB database.
+    
+    Note: Saves in format [protein_id, question, ground_truth, question_type]
+    to match the format expected by integrated_pipeline.py
     """
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(lmdb_path) if os.path.dirname(lmdb_path) else '.', exist_ok=True)
+    
     env = lmdb.open(lmdb_path, map_size=1099511627776)  # 1TB maximum size
     with env.begin(write=True) as txn:
         for idx, qa in enumerate(qa_pairs):
             key = str(idx).encode('utf-8')
+            # Save in list format: [protein_id, question, ground_truth, question_type]
+            # This format is compatible with get_qa_data function in integrated_pipeline.py
             value = json.dumps([
                 qa['protein_id'],
                 qa['question'],
-                qa['answer'],
+                qa['answer'],  # This is the ground_truth answer
                 qa['question_type']
-            ]).encode('utf-8')
+            ], ensure_ascii=False).encode('utf-8')
             txn.put(key, value)
+    env.close()
+    print(f"Saved {len(qa_pairs)} QA pairs to LMDB: {lmdb_path}")
 
 def save_to_json(qa_pairs: List[Dict], json_path: str):
     """

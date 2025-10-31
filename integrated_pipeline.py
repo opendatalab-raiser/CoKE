@@ -182,6 +182,8 @@ class IntegratedProteinPipeline:
 
         {%- if question %}
         question: \n {{question}}
+        {%- else %}
+        question: \n what is the function of the protein?
         {%- endif %}
         """
 
@@ -1043,8 +1045,11 @@ class IntegratedProteinPipeline:
             except Exception as e:
                 print(f"Error getting ProTrek information: {str(e)}")
 
+        # Add question - use default if not provided
         if question:
             prompt_parts.append(f"\nquestion: \n{question}")
+        else:
+            prompt_parts.append(f"\nquestion: \n what is the function of the protein?")
 
         return "\n".join(prompt_parts)
 
