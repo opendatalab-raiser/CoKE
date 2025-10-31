@@ -45,10 +45,13 @@ Lost_in_tokenization/
 ├── scripts/                     # Scripts
 │   └── run_protrek_text.sh     # ProTrek batch script
 ├── data/                        # Data directory
-│   └── raw_data/               # Raw data
-│       ├── all_pfam_descriptions.json  # Pfam descriptions
-│       ├── go.json             # GO information
-│       └── interpro_data.json  # InterPro information
+│   ├── raw_data/               # Raw data
+│   │   ├── all_pfam_descriptions.json  # Pfam descriptions
+│   │   ├── go.json             # GO information
+│   │   └── interpro_data.json  # InterPro information
+│   └── processed_data/         # Processed data
+│       ├── gt_protein2go_sp20250623.json  # Ground truth protein to GO mappings
+│       └── swissprot_pid2seq.json  # SwissProt protein ID to sequence mappings
 ├── integrated_pipeline.py       # Main pipeline
 ├── setup.sh                     # Environment setup
 └── README.md                    # This file
@@ -113,7 +116,7 @@ If `setup.sh` downloads are slow or fail due to network issues, you can manually
 Install `huggingface-cli`:
 
 ```bash
-pip install huggingface_hub[cli]
+pip install huggingface_hub
 ```
 
 Or use `git-lfs` (if you prefer Git-based download):
@@ -579,7 +582,7 @@ Paper: [https://arxiv.org/abs/2510.23127](https://arxiv.org/abs/2510.23127)
 
 ## License
 
-(To be added.)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Contact
 

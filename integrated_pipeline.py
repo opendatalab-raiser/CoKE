@@ -340,30 +340,30 @@ class IntegratedProteinPipeline:
 
     def _check_and_download_pdb_files(self, input_fasta: str, pdb_dir: str) -> str:
         """
-        检查并下载 PDB 文件（如果需要的话），支持重试机制。
+        Check and download PDB files (if necessary), supporting a retry mechanism.
         
         Args:
-            input_fasta: 输入 FASTA 文件路径
-            pdb_dir: PDB 文件目录
+            input_fasta: Path to the input FASTA file
+            pdb_dir: PDB file directory
             
         Returns:
-            更新后的 pdb_dir 路径
+            Updated pdb_dir path
         """
         if not self.auto_download_pdb:
-            print("自动下载 PDB 文件功能已禁用")
+            print("Automatic PDB file download is disabled")
             return pdb_dir
             
-        # 从 FASTA 文件中提取蛋白质 ID
+        # Extract protein IDs from the FASTA file
         protein_ids = []
         with open(input_fasta, 'r') as f:
             for line in f:
                 if line.startswith('>'):
-                    protein_id = line.strip()[1:].split()[0]  # 取第一个空格前的部分作为 ID
+                    protein_id = line.strip()[1:].split()[0]  # Take the part before the first space as the ID
                     protein_ids.append(protein_id)
         
-        print(f"从 FASTA 文件中提取到 {len(protein_ids)} 个蛋白质 ID")
+        print(f"Extracted {len(protein_ids)} protein IDs from the FASTA file")
         
-        # 检查哪些 PDB 文件缺失
+        # Check which PDB files are missing
         missing_ids = []
         os.makedirs(pdb_dir, exist_ok=True)
         
@@ -373,37 +373,37 @@ class IntegratedProteinPipeline:
                 missing_ids.append(protein_id)
         
         if not missing_ids:
-            print(f"✓ 所有 PDB 文件已存在")
+            print(f"✓ All PDB files already exist")
             return pdb_dir
         
-        print(f"⚠ 发现 {len(missing_ids)} 个蛋白质缺少 PDB 文件，开始下载...")
+        print(f"⚠ Found {len(missing_ids)} proteins missing PDB files, starting download...")
         
-        # 使用多进程下载 PDB 文件，支持重试
+        # Use multiple processes to download PDB files, supporting retries
         self._download_pdb_files_with_retry(missing_ids, pdb_dir)
         
         return pdb_dir
     
     def _download_pdb_files_with_retry(self, protein_ids: List[str], pdb_dir: str, max_retries: int = 10) -> None:
         """
-        带重试机制的PDB文件下载。
+        PDB file download with retry mechanism.
         
         Args:
-            protein_ids: 需要下载的蛋白质 ID 列表
-            pdb_dir: PDB 文件保存目录
-            max_retries: 最大重试次数
+            protein_ids: List of protein IDs to download
+            pdb_dir: PDB file save directory
+            max_retries: Maximum number of retries
         """
         failed_ids = protein_ids.copy()
         retry_count = 0
         
         while failed_ids and retry_count < max_retries:
             retry_count += 1
-            print(f"\n第 {retry_count} 次尝试下载 PDB 文件...")
-            print(f"剩余需要下载的蛋白质数量: {len(failed_ids)}")
+            print(f"\nAttempting to download PDB files for the {retry_count} time...")
+            print(f"Remaining number of proteins to download: {len(failed_ids)}")
             
-            # 下载当前失败的ID
+            # Download the currently failed IDs
             self._download_pdb_files_parallel(failed_ids, pdb_dir)
             
-            # 检查哪些文件仍然缺失
+            # Check which files are still missing
             still_missing = []
             for protein_id in failed_ids:
                 pdb_file = os.path.join(pdb_dir, f"AF-{protein_id}-F1-model_v6.pdb")
@@ -413,31 +413,31 @@ class IntegratedProteinPipeline:
             failed_ids = still_missing
             
             if failed_ids:
-                print(f"第 {retry_count} 次尝试后，仍有 {len(failed_ids)} 个蛋白质下载失败")
+                print(f"After the {retry_count} attempt, {len(failed_ids)} proteins still failed to download")
                 if retry_count < max_retries:
-                    print(f"将在第 {retry_count + 1} 次尝试中重新下载这些蛋白质...")
+                    print(f"Will retry downloading these proteins in the {retry_count + 1} attempt...")
             else:
-                print(f"✓ 所有 PDB 文件下载成功！")
+                print(f"✓ All PDB files downloaded successfully!")
                 break
         
         if failed_ids:
-            print(f"\n⚠ 经过 {max_retries} 次尝试，仍有 {len(failed_ids)} 个蛋白质无法下载")
-            print("这些蛋白质将没有对应的 PDB 结构，但会继续处理序列信息")
+            print(f"\n⚠ After {max_retries} attempts, {len(failed_ids)} proteins could not be downloaded")
+            print("These proteins will not have corresponding PDB structures, but sequence information processing will continue")
         else:
-            print(f"\n✓ 所有 PDB 文件下载完成！")
+            print(f"\n✓ All PDB files finished downloading!")
     
     def _download_pdb_files_parallel(self, protein_ids: List[str], pdb_dir: str) -> None:
         """
-        并行下载 PDB 文件。
+        Download PDB files in parallel.
         
         Args:
-            protein_ids: 需要下载的蛋白质 ID 列表
-            pdb_dir: PDB 文件保存目录
+            protein_ids: List of protein IDs to download
+            pdb_dir: PDB file save directory
         """
-        print(f"开始并行下载 {len(protein_ids)} 个 PDB 文件...")
+        print(f"Starting parallel download of {len(protein_ids)} PDB files...")
         
         def download_single_pdb(process_id, idx, protein_id, writer):
-            """下载单个 PDB 文件"""
+            """Download a single PDB file"""
             url = f"https://alphafold.ebi.ac.uk/files/AF-{protein_id}-F1-model_v6.pdb"
             output_path = os.path.join(pdb_dir, f"AF-{protein_id}-F1-model_v6.pdb")
             
@@ -446,26 +446,26 @@ class IntegratedProteinPipeline:
                 if response.status_code == 200:
                     with open(output_path, 'wb') as f:
                         f.write(response.content)
-                    print(f"✓ 成功下载 {protein_id}")
+                    print(f"✓ Successfully downloaded {protein_id}")
                     return None
                 else:
-                    print(f"✗ 下载 {protein_id} 失败，状态码: {response.status_code}")
+                    print(f"✗ Download of {protein_id} failed, status code: {response.status_code}")
                     if writer:
                         writer.write(f"{protein_id}\n")
                     return protein_id
             except Exception as e:
-                print(f"✗ 下载 {protein_id} 时出错: {str(e)}")
+                print(f"✗ Error during download of {protein_id}: {str(e)}")
                 if writer:
                     writer.write(f"{protein_id}\n")
                 return protein_id
         
-        # 设置失败 ID 保存路径
+        # Set failed ID save path
         if self.failed_pdb_ids_path is None:
             failed_ids_path = os.path.join(pdb_dir, "failed_downloads.txt")
         else:
             failed_ids_path = self.failed_pdb_ids_path
         
-        # 使用 MPR 进行并行下载
+        # Use MPR for parallel download
         mprs = MultipleProcessRunnerSimplifier(
             data=protein_ids,
             do=download_single_pdb,
@@ -477,29 +477,29 @@ class IntegratedProteinPipeline:
         
         results = mprs.run()
         
-        # 统计下载结果
+        # Count download results
         failed_ids = [result for result in results if result is not None]
         success_count = len(protein_ids) - len(failed_ids)
         
-        print(f"PDB 下载完成: 成功 {success_count}/{len(protein_ids)}")
+        print(f"PDB download complete: Success {success_count}/{len(protein_ids)}")
         if failed_ids:
-            print(f"下载失败的蛋白质 ID 已保存到: {failed_ids_path}")
+            print(f"Failed protein IDs saved to: {failed_ids_path}")
     
     def _is_uniprot_id(self, protein_id: str) -> bool:
         """
-        判断蛋白质 ID 是否为 UniProt ID 格式。
+        Check if the protein ID is in UniProt ID format.
         
         Args:
-            protein_id: 蛋白质 ID
+            protein_id: Protein ID
             
         Returns:
-            是否为 UniProt ID
+            Whether it is a UniProt ID
         """
-        # UniProt ID 通常是 6 个字符，包含字母和数字
-        # 例如: P12345, Q9Y6K9, A0A0A0A0A0
+        # UniProt IDs are usually 6 characters long, containing letters and numbers
+        # Example: P12345, Q9Y6K9, A0A0A0A0A0
         if len(protein_id) == 6 and protein_id.isalnum():
             return True
-        # 也支持更长的 UniProt ID
+        # Longer UniProt IDs are also supported
         if len(protein_id) >= 6 and protein_id.isalnum():
             return True
         return False
@@ -520,9 +520,9 @@ class IntegratedProteinPipeline:
         # Create temporary directory
         os.makedirs(temp_dir, exist_ok=True)
 
-        # 如果启用了自动下载 PDB 文件且 pdb_dir 存在，则检查并下载缺失的 PDB 文件
+        # If automatic PDB download is enabled and pdb_dir exists, check and download missing PDB files
         if self.auto_download_pdb and self.pdb_dir:
-            print("检查并下载缺失的 PDB 文件...")
+            print("Checking and downloading missing PDB files...")
             self.pdb_dir = self._check_and_download_pdb_files(input_fasta, self.pdb_dir)
 
         # Get sequence dictionary
@@ -585,16 +585,16 @@ class IntegratedProteinPipeline:
             else:
                 foldseek_info = json.load(open(self.foldseek_info_path))
             
-            # 确保 foldseek_info 的键与 FASTA 序列 ID 匹配
-            # 如果 foldseek 结果中的键是 PDB 文件名格式，需要转换为原始蛋白质 ID
+            # Ensure foldseek_info keys match FASTA sequence IDs
+            # If the keys in the foldseek results are in PDB filename format, they need to be converted to original protein IDs
             if foldseek_info:
                 corrected_foldseek_info = {}
                 for protein_id in seq_dict.keys():
-                    # 尝试不同的键格式来匹配 foldseek 结果
+                    # Try different key formats to match foldseek results
                     possible_keys = [
-                        protein_id,  # 原始 ID
-                        f"AF-{protein_id}-F1-model_v6",  # PDB 文件名格式
-                        f"AF-{protein_id}-F1-model_v6.pdb"  # 完整文件名
+                        protein_id,  # Original ID
+                        f"AF-{protein_id}-F1-model_v6",  # PDB filename format
+                        f"AF-{protein_id}-F1-model_v6.pdb"  # Full filename
                     ]
                     
                     matched_key = None
@@ -606,7 +606,7 @@ class IntegratedProteinPipeline:
                     if matched_key:
                         corrected_foldseek_info[protein_id] = foldseek_info[matched_key]
                     else:
-                        # 如果没有找到对应的 foldseek 结果，创建空结果
+                        # If no corresponding foldseek results are found, create empty results
                         corrected_foldseek_info[protein_id] = {
                             "sequence": seq_dict[protein_id],
                             "foldseek_results": []
@@ -1347,7 +1347,7 @@ def main():
                        help="Path to the InterProScan executable.")
 
     # Foldseek parameters
-    parser.add_argument("--use_foldseek", action="store_true", default=True,
+    parser.add_argument("--use_foldseek", action="store_true", default=False,
                        help="Whether to use Foldseek for remote homology search (default: True).")
     parser.add_argument("--foldseek_database", type=str, default="foldseek_db/sp",
                        help="Path to the Foldseek database (default: foldseek_db/sp).")
