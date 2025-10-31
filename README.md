@@ -95,6 +95,12 @@ Place the following files under `data/raw_data/`:
 * `go.json`: GO term definitions
 * `interpro_data.json`: InterPro database metadata
 
+Place the following files under `data/processed_data/`:
+
+* `gt_protein2go_sp20250623.json`: Ground truth protein to GO mappings
+* `swissprot_pid2seq.json`: SwissProt protein ID to sequence mappings
+
+
 ### 4. Activate the Conda Environment
 
 **Important:** All commands must be run in the `bioanalysis` conda environment. After running `setup.sh`, activate the environment before using the pipeline:
