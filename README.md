@@ -4,6 +4,8 @@ This is an integrated pipeline for protein function analysis that combines multi
 
 **📄 Paper:** [Lost in Tokenization: Context as the Key to Unlocking Biomolecular Understanding in Scientific LLMs](https://arxiv.org/abs/2510.23127) (arXiv:2510.23127)
 
+**🌐 Web Service:** [http://hi-protein.cn/CoKE/](http://hi-protein.cn/CoKE/) - Try the pipeline online!
+
 **📦 Data & Resources:** [Hugging Face Dataset](https://huggingface.co/datasets/opendatalab-raiser/CoKE)
 
 The Hugging Face dataset contains essential files required to run this pipeline, including:
@@ -182,9 +184,15 @@ After manual download, you can run `bash setup.sh` again. The script will detect
 
 ## Usage
 
+### Web Service (Recommended for Quick Start)
+
+**Try the pipeline online without installation:** [http://hi-protein.cn/CoKE/](http://hi-protein.cn/CoKE/)
+
+The web service provides an interactive interface to analyze protein sequences and get function predictions without setting up the local environment.
+
 ### Quick Start: Run Example Script
 
-The easiest way to get started is to run the example script that demonstrates all major features:
+The easiest way to get started locally is to run the example script that demonstrates all major features:
 
 ```bash
 bash scripts/run_example.sh
