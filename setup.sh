@@ -45,22 +45,41 @@ echo "Setting up InterProScan ${IPS_VERSION}..."
 mkdir -p interproscan
 cd interproscan || exit 1
 
-# Download InterProScan and checksum
-echo "Downloading InterProScan..."
-wget -nc "${IPS_URL}"
-wget -nc "${IPS_URL}.md5"
-
-# Verify MD5 checksum
-echo "Verifying download integrity..."
-if ! md5sum -c "${IPS_TAR}.md5"; then
-    echo "ERROR: MD5 checksum verification failed!"
-    echo "The downloaded file may be corrupted. Please try downloading again."
-    exit 1
+# Check if InterProScan archive already exists (from Hugging Face download)
+if [ -f "${IPS_TAR}" ] && [ -f "${IPS_TAR}.md5" ]; then
+    echo "✓ Found existing InterProScan archive in interproscan/ directory"
+    echo "  Verifying MD5 checksum..."
+    if md5sum -c "${IPS_TAR}.md5" 2>/dev/null; then
+        echo "  ✓ MD5 checksum verified. Using existing archive."
+    else
+        echo "  ⚠ MD5 checksum verification failed. Re-downloading..."
+        rm -f "${IPS_TAR}" "${IPS_TAR}.md5"
+    fi
 fi
 
-# Extract package
-echo "Extracting InterProScan..."
-tar -xzf "${IPS_TAR}"
+# Download InterProScan and checksum if not present
+if [ ! -f "${IPS_TAR}" ] || [ ! -f "${IPS_TAR}.md5" ]; then
+    echo "Downloading InterProScan..."
+    wget -nc "${IPS_URL}"
+    wget -nc "${IPS_URL}.md5"
+    
+    # Verify MD5 checksum
+    echo "Verifying download integrity..."
+    if ! md5sum -c "${IPS_TAR}.md5"; then
+        echo "ERROR: MD5 checksum verification failed!"
+        echo "The downloaded file may be corrupted. Please try downloading again."
+        echo "Alternatively, download from Hugging Face: https://huggingface.co/datasets/opendatalab-raiser/CoKE"
+        exit 1
+    fi
+fi
+
+# Extract package if not already extracted
+if [ ! -d "${IPS_DIR}" ]; then
+    echo "Extracting InterProScan..."
+    tar -xzf "${IPS_TAR}"
+else
+    echo "✓ InterProScan already extracted. Skipping extraction."
+fi
 
 # Verify Java installation in conda env
 echo "Checking Java environment in conda env..."
@@ -202,40 +221,97 @@ fi
 echo "Foldseek installation completed."
 
 # Create Foldseek database directory
+PROJECT_ROOT=$(pwd)
 mkdir -p foldseek_db
-cd foldseek_db || exit 1
 
-echo "Downloading AlphaFold Swiss-Prot database for Foldseek..."
-echo "This may take a while depending on your network connection..."
+# Check if foldseek_db directory exists and contains all required files
+check_foldseek_db_complete() {
+    local db_dir="$1"
+    local required_files=(
+        "sp"
+        "sp.dbtype"
+        "sp.index"
+        "sp.lookup"
+        "sp.version"
+        "sp_ca"
+        "sp_ca.dbtype"
+        "sp_ca.index"
+        "sp_h"
+        "sp_h.dbtype"
+        "sp_h.index"
+        "sp_ss"
+        "sp_ss.dbtype"
+        "sp_ss.index"
+        "sp_mapping"
+        "sp_taxonomy"
+    )
+    
+    for file in "${required_files[@]}"; do
+        if [ ! -f "$db_dir/$file" ]; then
+            return 1  # File missing
+        fi
+    done
+    return 0  # All files present
+}
 
-# Check if clash proxy is available
-if curl -s --connect-timeout 2 http://127.0.0.1:7890 > /dev/null 2>&1; then
-    echo "Detected clash proxy, using it for download..."
-    export http_proxy=http://127.0.0.1:7890
-    export https_proxy=http://127.0.0.1:7890
-    export HTTP_PROXY=http://127.0.0.1:7890
-    export HTTPS_PROXY=http://127.0.0.1:7890
+# Check if foldseek_db directory exists and contains all required files
+# Check two possible locations:
+# 1. Files directly in foldseek_db/ (from Hugging Face download)
+# 2. Files in foldseek_db/sp/ (from foldseek command)
+FOLDSEEK_DB_EXISTS=false
+if [ -d "foldseek_db/sp" ] && check_foldseek_db_complete "foldseek_db/sp"; then
+    echo "✓ Found existing Foldseek database in foldseek_db/sp/"
+    echo "  All required files are present. Skipping download."
+    FOLDSEEK_DB_EXISTS=true
+elif [ -d "foldseek_db" ] && check_foldseek_db_complete "foldseek_db"; then
+    echo "✓ Found existing Foldseek database in foldseek_db/"
+    echo "  All required files are present. Skipping download."
+    FOLDSEEK_DB_EXISTS=true
 fi
 
-# Use LD_PRELOAD to ensure foldseek uses the updated libstdc++ from conda
-# This fixes the GLIBCXX_3.4.29 and CXXABI_1.3.13 version issues
-export LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6.0.34"
-echo "Using preloaded library: $LD_PRELOAD"
+if [ "$FOLDSEEK_DB_EXISTS" = false ]; then
+    cd foldseek_db || exit 1
+    echo "Downloading AlphaFold Swiss-Prot database for Foldseek..."
+    echo "This may take a while depending on your network connection..."
 
-foldseek databases Alphafold/Swiss-Prot sp tmp
-unset LD_PRELOAD
 
-if [ $? -ne 0 ]; then
-    echo "Error: Failed to download Foldseek database!"
-    echo "You can try downloading manually later by running:"
-    echo "foldseek databases Alphafold/Swiss-Prot foldseek_db/sp tmp"
-    cd ..
-else
-    echo "Foldseek database downloaded successfully."
-    cd ..
-    
-    # Get the absolute path for the Foldseek database
+
+    # Use LD_PRELOAD to ensure foldseek uses the updated libstdc++ from conda
+    # This fixes the GLIBCXX_3.4.29 and CXXABI_1.3.13 version issues
+    export LD_PRELOAD="$CONDA_PREFIX/lib/libstdc++.so.6.0.34"
+    echo "Using preloaded library: $LD_PRELOAD"
+
+    foldseek databases Alphafold/Swiss-Prot sp tmp
+    unset LD_PRELOAD
+
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to download Foldseek database!"
+        echo "You can try downloading manually later by running:"
+        echo "foldseek databases Alphafold/Swiss-Prot foldseek_db/sp tmp"
+        echo ""
+        echo "Alternatively, you can download the database from Hugging Face:"
+        echo "https://huggingface.co/datasets/opendatalab-raiser/CoKE"
+        cd ..
+    else
+        echo "Foldseek database downloaded successfully."
+        cd ..
+    fi
+fi
+
+# Continue with environment variable setup if database exists
+# Determine the correct path based on where files are located
+if [ -d "foldseek_db/sp" ] && [ -f "foldseek_db/sp/sp" ]; then
+    # Files are in foldseek_db/sp/ subdirectory (from foldseek command)
     FOLDSEEK_DB_PATH=$(pwd)/foldseek_db/sp
+elif [ -d "foldseek_db" ] && [ -f "foldseek_db/sp" ]; then
+    # Files are directly in foldseek_db/ directory (from Hugging Face)
+    FOLDSEEK_DB_PATH=$(pwd)/foldseek_db
+else
+    FOLDSEEK_DB_PATH=""
+fi
+
+if [ -n "$FOLDSEEK_DB_PATH" ]; then
+    # Get the absolute path for the Foldseek database
     export FOLDSEEK_DB=$FOLDSEEK_DB_PATH
     echo "FOLDSEEK_DB environment variable set for current session: $FOLDSEEK_DB"
     
@@ -278,11 +354,17 @@ echo "===================================="
 echo "Summary:"
 echo "- InterProScan installed in conda environment '${CONDA_ENV_NAME}'"
 echo "- BLAST database: $(pwd)/blast_db"
-echo "- Foldseek database: $(pwd)/foldseek_db/sp"
+if [ -n "$FOLDSEEK_DB_PATH" ]; then
+    echo "- Foldseek database: $FOLDSEEK_DB_PATH"
+else
+    echo "- Foldseek database: Not found (download manually or from Hugging Face)"
+fi
 echo ""
 echo "To activate the environment:"
 echo "conda activate ${CONDA_ENV_NAME}"
 echo ""
 echo "Environment variables set:"
 echo "export BLASTDB=\"$(pwd)/blast_db\""
-echo "export FOLDSEEK_DB=\"$(pwd)/foldseek_db/sp\""
+if [ -n "$FOLDSEEK_DB_PATH" ]; then
+    echo "export FOLDSEEK_DB=\"$FOLDSEEK_DB_PATH\""
+fi

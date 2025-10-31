@@ -2,6 +2,15 @@
 
 This is an integrated pipeline for protein function analysis that combines multiple tools—BLAST, InterProScan, GO annotation, and LLM-based reasoning—to automate the end‑to‑end workflow from sequence to function prediction.
 
+**📄 Paper:** [Lost in Tokenization: Context as the Key to Unlocking Biomolecular Understanding in Scientific LLMs](https://arxiv.org/abs/2510.23127) (arXiv:2510.23127)
+
+**📦 Data & Resources:** [Hugging Face Dataset](https://huggingface.co/datasets/opendatalab-raiser/CoKE)
+
+The Hugging Face dataset contains essential files required to run this pipeline, including:
+* `data/` directory: Preprocessed data files (Pfam descriptions, GO information, InterPro data)
+* InterProScan compressed package: For installation without downloading from the official source
+* Foldseek database compressed package: Pre-built Foldseek database files
+
 ![intro](./assets/intro.png)
 
 ## Features
@@ -60,6 +69,9 @@ This script will:
 * Install Python dependencies
 * Configure BLAST databases
 * Install InterProScan
+* Download Foldseek database
+
+**Note:** If you encounter network issues or slow downloads for InterProScan or Foldseek database, you can download them manually from the Hugging Face dataset. See [Alternative: Manual Download from Hugging Face](#alternative-manual-download-from-hugging-face) below.
 
 ### 2. Dependencies
 
@@ -78,9 +90,117 @@ Place the following files under `data/raw_data/`:
 * `go.json`: GO term definitions
 * `interpro_data.json`: InterPro database metadata
 
+### 4. Activate the Conda Environment
+
+**Important:** All commands must be run in the `bioanalysis` conda environment. After running `setup.sh`, activate the environment before using the pipeline:
+
+```bash
+# Activate conda (if not already activated)
+source $(conda info --base)/etc/profile.d/conda.sh
+
+# Activate the bioanalysis environment
+conda activate bioanalysis
+```
+
+If you're using the example script `scripts/run_example.sh`, the environment will be activated automatically.
+
+### Alternative: Manual Download from Hugging Face
+
+If `setup.sh` downloads are slow or fail due to network issues, you can manually download InterProScan and Foldseek database from the Hugging Face dataset.
+
+#### Prerequisites
+
+Install `huggingface-cli`:
+
+```bash
+pip install huggingface_hub[cli]
+```
+
+Or use `git-lfs` (if you prefer Git-based download):
+
+```bash
+# Install git-lfs
+git lfs install
+```
+
+#### Download InterProScan
+
+Download the InterProScan compressed package and MD5 checksum file:
+
+```bash
+# Method 1: Using huggingface-cli
+huggingface-cli download opendatalab-raiser/CoKE \
+    interproscan-5.75-106.0-64-bit.tar.gz \
+    interproscan-5.75-106.0-64-bit.tar.gz.md5 \
+    --local-dir interproscan \
+    --local-dir-use-symlinks False
+
+# Method 2: Using git-lfs (clone the repository)
+git clone https://huggingface.co/datasets/opendatalab-raiser/CoKE
+cp CoKE/interproscan-5.75-106.0-64-bit.tar.gz* interproscan/
+```
+
+**Important:** Place both files (`interproscan-5.75-106.0-64-bit.tar.gz` and `interproscan-5.75-106.0-64-bit.tar.gz.md5`) in the `interproscan/` directory. The `setup.sh` script will automatically detect and use them.
+
+#### Download Foldseek Database
+
+Download the Foldseek database compressed package:
+
+```bash
+# Method 1: Using huggingface-cli
+huggingface-cli download opendatalab-raiser/CoKE \
+    foldseek_db.tar.gz \
+    --local-dir . \
+    --local-dir-use-symlinks False
+
+# Method 2: Using git-lfs
+git clone https://huggingface.co/datasets/opendatalab-raiser/CoKE
+cp CoKE/foldseek_db.tar.gz .
+```
+
+**Important:** Extract the archive so that files are directly in the `foldseek_db/` directory (not nested):
+
+```bash
+# Extract the archive
+tar -xzf foldseek_db.tar.gz
+
+# Verify the structure - files should be directly in foldseek_db/
+ls foldseek_db/
+# Should show: sp, sp.dbtype, sp.index, sp.lookup, sp.version, sp_ca, etc.
+# NOT: foldseek_db/foldseek_db/sp, etc.
+
+# If extracted incorrectly (nested), fix it:
+# If you see foldseek_db/foldseek_db/, move files up one level:
+mv foldseek_db/foldseek_db/* foldseek_db/
+rmdir foldseek_db/foldseek_db
+```
+
+After manual download, you can run `bash setup.sh` again. The script will detect existing files and skip downloading them.
+
 ## Usage
 
+### Quick Start: Run Example Script
+
+The easiest way to get started is to run the example script that demonstrates all major features:
+
+```bash
+bash scripts/run_example.sh
+```
+
+This script will:
+* Automatically activate the `bioanalysis` conda environment
+* Run multiple examples including basic usage, enzyme prediction, ProTrek integration, and Foldseek analysis
+* Save results to the `output/` directory
+
+**Note:** Make sure you have run `bash setup.sh` first to set up the environment.
+
 ### Basic Usage
+
+All commands below assume you have activated the `bioanalysis` conda environment:
+
+```bash
+conda activate bioanalysis
+```
 
 #### 1. Protein function prediction (non‑enzyme)
 
@@ -308,13 +428,19 @@ python integrated_pipeline.py --help
 
 You can create a QA dataset from UniProt entry descriptions using `generate_protein_qa.py`.
 
+**Note:** Make sure you have activated the `bioanalysis` conda environment before running these commands.
+
 ### 1. Download UniProt entries
 
 First, download UniProt entry records for your proteins:
 
 ```bash
-python download_uniprot_entry.py \
-    --pids_path examples/pids.txt \
+# Activate the environment
+conda activate bioanalysis
+
+# Download UniProt entries
+python scripts/download_uniprot_entry.py \
+    --input_path examples/pids.txt \
     --output_dir data/uniprot_entries
 ```
 
