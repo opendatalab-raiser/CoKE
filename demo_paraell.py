@@ -148,7 +148,7 @@ class ProteinAnalysisDemo:
             "PANTHER", "CDD", "GENE3D", "NCBIFAM", "SFLM", "MOBIDB_LITE", 
             "COILS", "PROSITE_PATTERNS", "FUNFAM", "SMART"
         ]
-        self.go_topk = 2
+        self.go_topk = 1
         self.selected_info_types = ['motif', 'go', 'protrek']
         self.is_enzyme = False
         self.cpu_cores = cpu_cores  # 限制CPU使用
@@ -173,6 +173,7 @@ class ProteinAnalysisDemo:
         # Conversation state management - 每个实例独立的状态
         self.current_protein_data = None
         self.conversation_history = []
+        self.prompt = None
         
         # 加载已有的会话数据（如果存在）
         self._load_session_data()
@@ -208,6 +209,7 @@ class ProteinAnalysisDemo:
                 'session_id': self.session_id,
                 'timestamp': datetime.now().isoformat(),
                 'current_protein_data': self.current_protein_data,
+                "prompt": self.prompt,
                 'conversation_history': self.conversation_history
             }
             with open(session_file, 'w', encoding='utf-8') as f:
@@ -478,8 +480,19 @@ class ProteinAnalysisDemo:
                 temp_dir=os.path.join(temp_dir, "foldseek_tmp")
             )
             
-            print(f"Foldseek analysis complete: Found results for {len(foldseek_info)} proteins.")
-            return foldseek_info
+            # Convert protein IDs to 'demo_protein' to match BLAST and InterProScan results
+            if foldseek_info:
+                # Get the first (and only) protein's results
+                first_protein_id = list(foldseek_info.keys())[0]
+                first_protein_data = foldseek_info[first_protein_id]
+                
+                # Create new foldseek_info with 'demo_protein' as the key
+                foldseek_info_new = {
+                    "demo_protein": first_protein_data
+                }
+            
+            print(f"Foldseek analysis complete: Found results for {len(foldseek_info_new)} proteins.")
+            return foldseek_info_new
             
         except Exception as e:
             print(f"Foldseek analysis error: {str(e)}")
@@ -494,19 +507,32 @@ class ProteinAnalysisDemo:
             from utils.protein_go_analysis import get_go_definition
             from jinja2 import Template
             
-            # Get GO analysis results
-            go_ids = protein_go_dict.get(protein_id, [])
+            # Get GO analysis results (new format with sources)
+            go_data_raw = protein_go_dict.get(protein_id, {})
+            go_ids = go_data_raw.get("go_ids", []) if isinstance(go_data_raw, dict) else go_data_raw
+            go_sources = go_data_raw.get("go_sources", {}) if isinstance(go_data_raw, dict) else {}
+            
             go_annotations = []
             all_related_definitions = {}
-            
+
             if go_ids:
                 for go_id in go_ids:
-                    # Ensure GO ID format is correct
+                    # Ensure correct GO ID format
                     clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
-                    go_annotations.append({"go_id": clean_go_id})
                     
+                    # Get source and e-value information
+                    source_info = go_sources.get(clean_go_id, {})
+                    source = source_info.get("source", "Unknown")
+                    evalue = source_info.get("evalue", None)
+                    
+                    go_annotations.append({
+                        "go_id": clean_go_id,
+                        "source": source,
+                        "evalue": evalue if evalue else "N/A"
+                    })
+
                     # Get GO definition
-                    if os.path.exists(self.go_info_path):
+                    if self.go_info_path and os.path.exists(self.go_info_path):
                         definition = get_go_definition(clean_go_id, self.go_info_path)
                         if definition:
                             all_related_definitions[clean_go_id] = definition
@@ -664,9 +690,18 @@ class ProteinAnalysisDemo:
                         "sequence_source": sequence_source,
                         "interproscan_info": interproscan_info,
                         "protein_go_dict": protein_go_dict,
-                        "foldseek_info": foldseek_info,
+                        # "foldseek_info": foldseek_info,
                         "is_enzyme": is_enzyme
                     }
+                    
+                    # Generate and save initial prompt (without a specific question)
+                    self.prompt = self.generate_prompt(
+                        "demo_protein",
+                        interproscan_info,
+                        protein_go_dict,
+                        "",  # Empty question for initial prompt
+                        is_enzyme
+                    )
                     
                     # 保存会话数据
                     self._save_session_data()
@@ -910,7 +945,7 @@ if __name__ == "__main__":
     )
     demo.launch(
         server_name="0.0.0.0",
-        server_port=33586,
+        server_port=30003,
         share=False,
         debug=True,
         max_threads=50,  # 限制最大线程数

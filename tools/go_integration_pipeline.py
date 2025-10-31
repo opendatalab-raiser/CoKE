@@ -18,7 +18,7 @@ class GOIntegrationPipeline:
                  identity_threshold: int = 80,
                  coverage_threshold: int = 80,
                  evalue_threshold: float = 1e-50,
-                 topk: int = 2,
+                 topk: int = 1,
                  protrek_threshold: Optional[float] = None,
                  use_protrek: bool = False,
                  use_foldseek: bool = True,
@@ -112,7 +112,7 @@ class GOIntegrationPipeline:
         return [go_id.split("_")[-1] if "_" in go_id else go_id
                 for go_id in self.protein_go_dict.get(uniprot_id, [])]
 
-    def extract_blast_go_ids(self, blast_results: List[Dict], sequence: str) -> List[str]:
+    def extract_blast_go_ids(self, blast_results: List[Dict], sequence: str) -> Tuple[List[str], Dict[str, str]]:
         """
         Extracts qualifying GO IDs from BLAST results.
 
@@ -121,17 +121,39 @@ class GOIntegrationPipeline:
             sequence: The current protein sequence (to avoid self-matching).
 
         Returns:
-            A list of qualifying GO IDs.
+            A tuple of (list of GO IDs, dict mapping GO IDs to e-values).
         """
         go_ids = []
+        go_evalues = {}
 
         if self.topk > 0:
-            # Use the top-k strategy
-            for result in blast_results[:self.topk]:
+            # Use the top-k strategy: skip identical sequences and take topk different sequences
+            count = 0
+            for result in blast_results:
+                if count >= self.topk:
+                    break
                 hit_id = result.get('ID', '')
                 if self.pid2seq.get(hit_id) == sequence:
                     continue
-                go_ids.extend(self._get_go_from_uniprot_id(hit_id))
+                
+                hit_gos = self._get_go_from_uniprot_id(hit_id)
+                go_ids.extend(hit_gos)
+                
+                # Record e-value for each GO from this hit
+                evalue = result.get('E-value', None)
+                for go_id in hit_gos:
+                    clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
+                    # Keep the best (smallest) e-value if GO appears in multiple hits
+                    if clean_go_id not in go_evalues:
+                        go_evalues[clean_go_id] = evalue
+                    elif evalue and go_evalues[clean_go_id]:
+                        try:
+                            if float(evalue) < float(go_evalues[clean_go_id]):
+                                go_evalues[clean_go_id] = evalue
+                        except (ValueError, TypeError):
+                            pass
+                
+                count += 1
         else:
             # Use the threshold strategy
             for result in blast_results:
@@ -148,11 +170,26 @@ class GOIntegrationPipeline:
                     hit_id = result.get('ID', '')
                     if self.pid2seq.get(hit_id) == sequence:
                         continue
-                    go_ids.extend(self._get_go_from_uniprot_id(hit_id))
+                    
+                    hit_gos = self._get_go_from_uniprot_id(hit_id)
+                    go_ids.extend(hit_gos)
+                    
+                    # Record e-value for each GO from this hit
+                    result_evalue = result.get('E-value', None)
+                    for go_id in hit_gos:
+                        clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
+                        if clean_go_id not in go_evalues:
+                            go_evalues[clean_go_id] = result_evalue
+                        elif result_evalue and go_evalues[clean_go_id]:
+                            try:
+                                if float(result_evalue) < float(go_evalues[clean_go_id]):
+                                    go_evalues[clean_go_id] = result_evalue
+                            except (ValueError, TypeError):
+                                pass
 
-        return go_ids
+        return go_ids, go_evalues
 
-    def extract_foldseek_go_ids(self, foldseek_results: List[Dict], sequence: str) -> List[str]:
+    def extract_foldseek_go_ids(self, foldseek_results: List[Dict], sequence: str) -> Tuple[List[str], Dict[str, str]]:
         """
         Extracts qualifying GO IDs from Foldseek results.
 
@@ -161,20 +198,42 @@ class GOIntegrationPipeline:
             sequence: The current protein sequence (to avoid self-matching).
 
         Returns:
-            A list of qualifying GO IDs.
+            A tuple of (list of GO IDs, dict mapping GO IDs to e-values).
         """
         go_ids = []
+        go_evalues = {}
 
         if self.topk > 0:
-            # Use the top-k strategy
-            for result in foldseek_results[:self.topk]:
+            # Use the top-k strategy: skip identical sequences and take topk different sequences
+            count = 0
+            for result in foldseek_results:
+                if count >= self.topk:
+                    break
                 hit_id = result.get('ID', '')
                 # hit_id like this: AF-P40571-F1-model_v6
                 # we need to get the uniprot id from the hit id: P40571
                 hit_uniprot_id = hit_id.split("-")[1]
                 if self.pid2seq.get(hit_uniprot_id) == sequence:
                     continue
-                go_ids.extend(self._get_go_from_uniprot_id(hit_uniprot_id))
+                
+                hit_gos = self._get_go_from_uniprot_id(hit_uniprot_id)
+                go_ids.extend(hit_gos)
+                
+                # Record e-value for each GO from this hit
+                evalue = result.get('E-value', None)
+                for go_id in hit_gos:
+                    clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
+                    # Keep the best (smallest) e-value if GO appears in multiple hits
+                    if clean_go_id not in go_evalues:
+                        go_evalues[clean_go_id] = evalue
+                    elif evalue and go_evalues[clean_go_id]:
+                        try:
+                            if float(evalue) < float(go_evalues[clean_go_id]):
+                                go_evalues[clean_go_id] = evalue
+                        except (ValueError, TypeError):
+                            pass
+                
+                count += 1
         else:
             # Use the threshold strategy
             for result in foldseek_results:
@@ -194,9 +253,24 @@ class GOIntegrationPipeline:
                     hit_uniprot_id = hit_id.split("-")[1]
                     if self.pid2seq.get(hit_uniprot_id) == sequence:
                         continue
-                    go_ids.extend(self._get_go_from_uniprot_id(hit_uniprot_id))
+                    
+                    hit_gos = self._get_go_from_uniprot_id(hit_uniprot_id)
+                    go_ids.extend(hit_gos)
+                    
+                    # Record e-value for each GO from this hit
+                    result_evalue = result.get('E-value', None)
+                    for go_id in hit_gos:
+                        clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
+                        if clean_go_id not in go_evalues:
+                            go_evalues[clean_go_id] = result_evalue
+                        elif result_evalue and go_evalues[clean_go_id]:
+                            try:
+                                if float(result_evalue) < float(go_evalues[clean_go_id]):
+                                    go_evalues[clean_go_id] = result_evalue
+                            except (ValueError, TypeError):
+                                pass
 
-        return go_ids
+        return go_ids, go_evalues
 
 
 
@@ -220,40 +294,28 @@ class GOIntegrationPipeline:
         go_sources = {}
         
         # Process BLAST results
-        blast_gos = self.extract_blast_go_ids(blast_results, sequence)
-        blast_evalue = None
-        for result in blast_results[:self.topk if self.topk > 0 else len(blast_results)]:
-            hit_id = result.get('ID', '')
-            if self.pid2seq.get(hit_id) != sequence:
-                blast_evalue = result.get('E-value', None)
-                break
+        blast_gos, blast_evalues = self.extract_blast_go_ids(blast_results, sequence)
         
         for go_id in blast_gos:
             clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
             go_ids.add(clean_go_id)
             go_sources[clean_go_id] = {
                 "source": "BLAST",
-                "evalue": blast_evalue
+                "evalue": blast_evalues.get(clean_go_id)
             }
         
         # Process Foldseek results
-        foldseek_gos = self.extract_foldseek_go_ids(foldseek_results, sequence)
-        foldseek_evalue = None
-        for result in foldseek_results[:self.topk if self.topk > 0 else len(foldseek_results)]:
-            hit_id = result.get('ID', '')
-            # foldseek hit id like this:AF-P40571-F1-model_v6
-            # we need to get the uniprot id from the hit id: P40571
-            hit_uniprot_id = hit_id.split("-")[1]
-            if self.pid2seq.get(hit_uniprot_id) != sequence:
-                foldseek_evalue = result.get('E-value', None)
-                break
+        foldseek_gos, foldseek_evalues = self.extract_foldseek_go_ids(foldseek_results, sequence)
         
         for go_id in foldseek_gos:
             clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
             go_ids.add(clean_go_id)
+            
             # If GO ID already exists from BLAST, keep the better e-value
             if clean_go_id in go_sources:
                 existing_evalue = go_sources[clean_go_id]['evalue']
+                foldseek_evalue = foldseek_evalues.get(clean_go_id)
+                
                 if foldseek_evalue and existing_evalue:
                     try:
                         existing_eval = float(existing_evalue)
@@ -273,7 +335,7 @@ class GOIntegrationPipeline:
             else:
                 go_sources[clean_go_id] = {
                     "source": "Foldseek",
-                    "evalue": foldseek_evalue
+                    "evalue": foldseek_evalues.get(clean_go_id)
                 }
         
         return {
@@ -281,29 +343,6 @@ class GOIntegrationPipeline:
             "go_sources": go_sources
         }
 
-    def extract_foldseek_go_ids(self, foldseek_results: List[Dict], sequence: str) -> List[str]:
-        """
-        Extract GO IDs from Foldseek results.
-
-        Args:
-            foldseek_results: List of Foldseek results.
-            sequence: The current protein sequence (to avoid self-matching).
-
-        Returns:
-            List of GO IDs.
-        """
-        go_ids = []
-        
-        for result in foldseek_results[:self.topk if self.topk > 0 else len(foldseek_results)]:
-            hit_id = result.get('ID', '')
-            # hit_id like this: AF-P40571-F1-model_v6
-            # we need to get the uniprot id from the hit id: P40571
-            hit_uniprot_id = hit_id.split("-")[1]
-            if self.pid2seq.get(hit_uniprot_id) != sequence:
-                gos = self._get_go_from_uniprot_id(hit_uniprot_id)
-                go_ids.extend(gos)
-        
-        return go_ids
 
     def first_level_filtering(self, interproscan_info: Dict, blast_info: Dict, 
                              foldseek_info: Dict = None) -> Dict:
@@ -359,15 +398,7 @@ class GOIntegrationPipeline:
             elif protein_id in blast_info:
                 sequence = blast_info[protein_id]['sequence']
                 blast_results = blast_info[protein_id].get('blast_results', [])
-                blast_gos = self.extract_blast_go_ids(blast_results, sequence)
-                
-                # Get e-value for the first valid hit
-                blast_evalue = None
-                for result in blast_results[:self.topk if self.topk > 0 else len(blast_results)]:
-                    hit_id = result.get('ID', '')
-                    if self.pid2seq.get(hit_id) != sequence:
-                        blast_evalue = result.get('E-value', None)
-                        break
+                blast_gos, blast_evalues = self.extract_blast_go_ids(blast_results, sequence)
                 
                 for go_id in blast_gos:
                     clean_go_id = go_id.split(":")[-1] if ":" in go_id else go_id
@@ -375,7 +406,7 @@ class GOIntegrationPipeline:
                     if clean_go_id not in go_sources:  # Don't override InterProScan
                         go_sources[clean_go_id] = {
                             "source": "BLAST",
-                            "evalue": blast_evalue
+                            "evalue": blast_evalues.get(clean_go_id)
                         }
 
             protein_go_dict[protein_id] = {
@@ -594,7 +625,7 @@ def main():
                        help="BLAST coverage threshold (0-100, default: 80).")
     parser.add_argument("--evalue", type=float, default=1e-50,
                        help="BLAST E-value threshold (default: 1e-50).")
-    parser.add_argument("--topk", type=int, default=2,
+    parser.add_argument("--topk", type=int, default=1,
                        help="Use the top-k BLAST/Foldseek results (default: 2; set to 0 to use the threshold strategy).")
     parser.add_argument("--protrek_threshold", type=float, default=None,
                        help="ProTrek score threshold (only used if --use_protrek is specified).")

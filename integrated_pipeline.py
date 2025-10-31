@@ -30,7 +30,7 @@ class IntegratedProteinPipeline:
                  blast_num_threads: int = 256,  # Number of BLAST threads
                  interproscan_path: str = "interproscan/interproscan-5.75-106.0/interproscan.sh",
                  interproscan_libraries: List[str] = None,
-                 go_topk: int = 2,
+                 go_topk: int = 1,
                  selected_info_types: List[str] = None,
                  pfam_descriptions_path: str = None,
                  go_info_path: str = None,
@@ -1161,6 +1161,7 @@ class IntegratedProteinPipeline:
                             'protein_id': protein_id,
                             'index': index,
                             'question': question,
+                            'prompt': prompt,
                             'ground_truth': ground_truth,
                             'llm_answer': llm_response
                         }
@@ -1169,6 +1170,7 @@ class IntegratedProteinPipeline:
                             'protein_id': protein_id,
                             'index': index,
                             'question': question,
+                            'prompt': prompt,
                             'ground_truth': ground_truth,
                             'llm_answer': llm_response,
                             'question_type': question_type
@@ -1360,7 +1362,7 @@ def main():
                        help="Path to save failed PDB download IDs.")
 
     # GO integration parameters
-    parser.add_argument("--go_topk", type=int, default=2, help="Top-k parameter for GO integration.")
+    parser.add_argument("--go_topk", type=int, default=1, help="Top-k parameter for GO integration.")
 
     # Prompt generation parameters
     parser.add_argument("--selected_info_types", type=str, nargs='+',
