@@ -2,7 +2,7 @@
 
 # Define InterProScan version
 IPS_VERSION="5.75-106.0"
-CONDA_ENV_NAME="bioanalysis"
+CONDA_ENV_NAME="bioanalysis" #or your own conda environment name
 
 IPS_DIR="interproscan-${IPS_VERSION}"
 IPS_TAR="interproscan-${IPS_VERSION}-64-bit.tar.gz"
@@ -22,7 +22,7 @@ if conda env list | grep -q "^${CONDA_ENV_NAME} "; then
 else
     # Create conda environment with Java 11
     echo "Creating conda environment '${CONDA_ENV_NAME}' with OpenJDK 11..."
-    conda create -y -n ${CONDA_ENV_NAME} openjdk=11 python
+    conda create -y -n ${CONDA_ENV_NAME} openjdk=11 python=3.10
     if [ $? -ne 0 ]; then
         echo "Error: Failed to create conda environment"
         exit 1
