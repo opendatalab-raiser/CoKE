@@ -134,42 +134,23 @@ Or use `git-lfs` (if you prefer Git-based download):
 git lfs install
 ```
 
-#### Download InterProScan
+#### Download InterProScan and Foldseek Database
 
-Download the InterProScan compressed package and MD5 checksum file:
+Download both InterProScan and Foldseek database from Hugging Face:
 
 ```bash
 # Method 1: Using huggingface-cli
 huggingface-cli download opendatalab-raiser/CoKE \
-    interproscan-5.75-106.0-64-bit.tar.gz \
-    interproscan-5.75-106.0-64-bit.tar.gz.md5 \
-    --local-dir interproscan \
-    --local-dir-use-symlinks False
+    --local-dir . \
+    --repo-type dataset
 
 # Method 2: Using git-lfs (clone the repository)
 git clone https://huggingface.co/datasets/opendatalab-raiser/CoKE
-cp CoKE/interproscan-5.75-106.0-64-bit.tar.gz* interproscan/
 ```
 
-**Important:** Place both files (`interproscan-5.75-106.0-64-bit.tar.gz` and `interproscan-5.75-106.0-64-bit.tar.gz.md5`) in the `interproscan/` directory. The `setup.sh` script will automatically detect and use them.
-
-#### Download Foldseek Database
-
-Download the Foldseek database compressed package:
-
-```bash
-# Method 1: Using huggingface-cli
-huggingface-cli download opendatalab-raiser/CoKE \
-    foldseek_db.tar.gz \
-    --local-dir . \
-    --local-dir-use-symlinks False
-
-# Method 2: Using git-lfs
-git clone https://huggingface.co/datasets/opendatalab-raiser/CoKE
-cp CoKE/foldseek_db.tar.gz .
-```
-
-**Important:** Extract the archive so that files are directly in the `foldseek_db/` directory (not nested):
+**Important:** 
+- Place InterProScan files (`interproscan-5.75-106.0-64-bit.tar.gz` and `interproscan-5.75-106.0-64-bit.tar.gz.md5`) in the `interproscan/` directory. The `setup.sh` script will automatically detect and use them.
+- Extract the Foldseek database archive so that files are directly in the `foldseek_db/` directory (not nested):
 
 ```bash
 # Extract the archive
