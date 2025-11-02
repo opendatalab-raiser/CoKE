@@ -155,16 +155,6 @@ git clone https://huggingface.co/datasets/opendatalab-raiser/CoKE
 ```bash
 # Extract the archive
 tar -xzf foldseek_db.tar.gz
-
-# Verify the structure - files should be directly in foldseek_db/
-ls foldseek_db/
-# Should show: sp, sp.dbtype, sp.index, sp.lookup, sp.version, sp_ca, etc.
-# NOT: foldseek_db/foldseek_db/sp, etc.
-
-# If extracted incorrectly (nested), fix it:
-# If you see foldseek_db/foldseek_db/, move files up one level:
-mv foldseek_db/foldseek_db/* foldseek_db/
-rmdir foldseek_db/foldseek_db
 ```
 
 After manual download, you can run `bash setup.sh` again. The script will detect existing files and skip downloading them.
