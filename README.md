@@ -1,10 +1,13 @@
 # Context as the Key Engine
 
-This is an integrated pipeline for protein function analysis that combines multiple tools—BLAST, InterProScan, GO annotation, and LLM-based reasoning—to automate the end‑to‑end workflow from sequence to function prediction.
+Forget tokenizing sequences—start talking to them.
+
+By constructing a knowledge-guided cognitive from established bioinformatics tools. CoKE redefines how we interpret biomolecules. Without fine-tuning or domain-specific training, we harness the full power of general LLMs by feeding them structured biological knowledge. A train-free system where off-the-shelf language models consistently outperform state-of-the-art scientific LLMs on protein function reasoning. This isn’t just prediction—it’s dialogue with biology. Starting with proteins, but designed for all sequences.
+
 
 **📄 Paper:** [Lost in Tokenization: Context as the Key to Unlocking Biomolecular Understanding in Scientific LLMs](https://arxiv.org/abs/2510.23127) (arXiv:2510.23127)
 
-**🌐 Web Service:** [http://hi-protein.cn/CoKE/](http://hi-protein.cn/CoKE/) - Try the pipeline online!
+**🌐 Web Service:** [http://hi-protein.cn/CoKE/](http://hi-protein.cn/CoKE/)
 
 **📦 Data & Resources:** [Hugging Face Dataset](https://huggingface.co/datasets/opendatalab-raiser/CoKE)
 
